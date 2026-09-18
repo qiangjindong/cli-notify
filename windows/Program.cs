@@ -90,13 +90,13 @@ static class Program {
             }
             if(e.Kind=="forget") { ToastNotificationManagerCompat.History.Remove(e.Id[..16],"Codex"); Windows.Remove(e.Id); File.WriteAllText(Path.Combine(Root,"windows.json"),JsonSerializer.Serialize(Windows)); return; }
             if(e.Kind=="focus") { Focus(e.Id); return; }
-            if(e.Kind!="complete" && e.Kind!="question" && e.Kind!="approval") return;
+            if(e.Kind!="complete" && e.Kind!="question" && e.Kind!="approval" && e.Kind!="compact") return;
             if(!Windows.TryGetValue(e.Id,out var w) || !Valid(w)) { Log(e.Id,e.Kind,"invalid-window"); return; }
             if(e.Key.Length>0 && !Seen.Add(e.Id+":"+e.Kind+":"+e.Key)) { Log(e.Id,e.Kind,"duplicate"); return; }
             if(Seen.Count>10000) { Seen.Clear(); if(e.Key.Length>0) Seen.Add(e.Id+":"+e.Kind+":"+e.Key); }
             var seenFile=Path.Combine(Root,"events.json"); File.WriteAllText(seenFile+".tmp",JsonSerializer.Serialize(Seen)); File.Move(seenFile+".tmp",seenFile,true);
             if(GetForegroundWindow()==(nint)w.Hwnd) { Log(e.Id,e.Kind,"foreground-suppressed"); return; }
-            Toast(e.Id,e.Kind switch { "complete" => "Codex 已完成", "approval" => "Codex 等待命令审批", _ => "Codex 需要回答" },w.Cwd);
+            Toast(e.Id,e.Kind switch { "complete" => "Codex 已完成", "approval" => "Codex 等待命令审批", "compact" => "Codex 上下文已压缩", _ => "Codex 需要回答" },w.Cwd);
             Log(e.Id,e.Kind,"notified");
         }
     }

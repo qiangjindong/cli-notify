@@ -46,14 +46,14 @@ try:
         send(ident,'focus'); time.sleep(.3)
         foreground=int(native('[CWNTest]::GetForegroundWindow().ToInt64()'))
         if foreground==windows[ident]['Hwnd']:
-            for kind in ('complete','question','approval'):
+            for kind in ('complete','question','approval','compact'):
                 send(ident,kind,uuid.uuid4().hex);assert logs(ident,kind)[-1]=='foreground-suppressed'
-            report.append('foreground complete/question/approval suppressed: '+ident)
+            report.append('foreground complete/question/approval/compact suppressed: '+ident)
         else: report.append('focus denied; taskbar fallback: '+ident)
         # Windows may deny Focus; choose a window that is actually background.
         foreground=int(native('[CWNTest]::GetForegroundWindow().ToInt64()'))
         other=next(x for x in ids if windows[x]['Hwnd']!=foreground)
-        for kind in ('complete','question','approval'):
+        for kind in ('complete','question','approval','compact'):
             front_before=native('[CWNTest]::GetForegroundWindow().ToInt64()')
             key=uuid.uuid4().hex;send(other,kind,key)
             assert logs(other,kind)[-1]=='notified',logs(other,kind)

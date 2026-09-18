@@ -72,7 +72,7 @@ def toml_value(value):
 
 def hook_options(args=()):
     import tomllib
-    existing={'PreToolUse':[], 'PermissionRequest':[]}; states={}
+    existing={'PreToolUse':[], 'PermissionRequest':[], 'PostCompact':[]}; states={}
     for override in overrides(args):
         try: hooks=tomllib.loads(override).get('hooks',{})
         except tomllib.TOMLDecodeError: continue
@@ -85,6 +85,7 @@ def hook_options(args=()):
     for event,event_name,kind,matcher in (
         ('PreToolUse','pre_tool_use','question','(^|.*[._])request_user_input$'),
         ('PermissionRequest','permission_request','approval','.*'),
+        ('PostCompact','post_compact','compact','^(manual|auto)$'),
     ):
         command=shlex.join([sys.executable,str(ROOT/'bridge.py'),kind])
         handler={'type':'command','command':command,'timeout':2,'async':False}

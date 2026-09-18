@@ -47,7 +47,7 @@ def user_completion(payload):
 def send(kind, payload=None):
     payload = payload or {}
     identifiers = [payload.get(k) for k in ('session_id','thread-id','turn-id','tool_use_id','tool_call_id')]
-    if kind=='approval': identifiers.extend([payload.get('turn_id'),payload.get('request_id')])
+    if kind in ('approval','compact'): identifiers.extend([payload.get('turn_id'),payload.get('request_id')])
     key = hashlib.sha256(json.dumps(identifiers).encode()).hexdigest() if any(identifiers) else ''
     event = {'Id':os.environ['CWN_ID'], 'Kind':kind, 'Cwd':Path(os.environ.get('CWN_CWD',os.getcwd())).name, 'Key':key}
     try:
@@ -66,21 +66,22 @@ def main():
                 subprocess.Popen([sys.executable,str(ROOT/'bridge.py'),'question-worker',json.dumps(identifiers)],stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,start_new_session=True)
         except Exception as exc:
             log(kind,type(exc).__name__)
-    elif kind=='approval':
+    elif kind in ('approval','compact'):
         try:
             payload=json.load(sys.stdin)
-            if payload.get('hook_event_name')=='PermissionRequest':
+            if payload.get('hook_event_name')=={'approval':'PermissionRequest','compact':'PostCompact'}[kind]:
                 identifiers={k:payload.get(k) for k in ('session_id','turn_id','tool_use_id','tool_call_id')}
-                # PermissionRequest has no stable request id in 0.155.0. Two
-                # approvals of the same command in one turn are distinct waits.
+                # These hooks have no stable event id in 0.155.0. Repeated
+                # approvals or compactions in one turn are distinct events.
                 identifiers['request_id']=uuid.uuid4().hex
-                subprocess.Popen([sys.executable,str(ROOT/'bridge.py'),'approval-worker',json.dumps(identifiers)],stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,start_new_session=True)
+                subprocess.Popen([sys.executable,str(ROOT/'bridge.py'),kind+'-worker',json.dumps(identifiers)],stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,start_new_session=True)
         except Exception as exc:
             log(kind,type(exc).__name__)
-    elif kind=='approval-worker':
+    elif kind in ('approval-worker','compact-worker'):
+        event_kind=kind.removesuffix('-worker')
         payload=json.loads(sys.argv[2])
-        if user_completion({'thread-id':payload.get('session_id')}): send('approval',payload)
-        else: log('approval','internal-or-unknown-suppressed',payload)
+        if user_completion({'thread-id':payload.get('session_id')}): send(event_kind,payload)
+        else: log(event_kind,'internal-or-unknown-suppressed',payload)
     elif kind=='question-worker': send('question',json.loads(sys.argv[2]))
     elif kind=='complete':
         raw=sys.argv[-1]

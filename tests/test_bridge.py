@@ -70,6 +70,20 @@ class BridgeTests(unittest.TestCase):
                 self.assertEqual(event['Kind'],'approval');self.assertNotIn('PRIVATE',raw)
                 keys.append(event['Key'])
             self.assertNotEqual(*keys)
+    def test_compaction_detaches_and_filters_internal_threads(self):
+        payload={'hook_event_name':'PostCompact','session_id':'main','turn_id':'turn','trigger':'auto','transcript_path':'PRIVATE'}
+        with patch('bridge.json.load',return_value=payload),patch.object(sys,'argv',['bridge.py','compact']),patch('bridge.subprocess.Popen') as worker:
+            bridge.main();bridge.main()
+            calls=worker.call_args_list
+            self.assertEqual(calls[0].args[0][-2],'compact-worker')
+            self.assertNotIn('PRIVATE',calls[0].args[0][-1])
+            self.assertNotEqual(json.loads(calls[0].args[0][-1])['request_id'],json.loads(calls[1].args[0][-1])['request_id'])
+        for user in (False,True):
+            with self.subTest(user=user),patch.object(sys,'argv',['bridge.py','compact-worker',calls[0].args[0][-1]]),patch('bridge.user_completion',return_value=user),patch('bridge.send') as send,patch('bridge.log'):
+                bridge.main()
+                self.assertEqual(send.called,user)
+                if user:self.assertEqual(send.call_args.args[0],'compact')
+
     def test_original_notify_receives_exact_payload(self):
         raw=json.dumps({'type':'agent-turn-complete','last-assistant-message':'中文\nquote"'},ensure_ascii=False)
         with patch.dict(os.environ,{'CWN_ORIGINAL_NOTIFY':json.dumps(['original','--arg'])}),patch.object(sys,'argv',['bridge.py','complete',raw]),patch('bridge.send'),patch('bridge.subprocess.Popen') as popen:
@@ -166,7 +180,7 @@ class BridgeTests(unittest.TestCase):
                     hooks=c.call('hooks/list',{'cwds':[temp]})['data'][0]['hooks']
                     self.assertTrue(any(h['command']=='/bin/true' and h['trustStatus']=='untrusted' for h in hooks))
                     self.assertTrue(any(h['source']=='sessionFlags' and h['trustStatus']=='trusted' for h in hooks))
-                    for event in ('preToolUse','permissionRequest'):
+                    for event in ('preToolUse','permissionRequest','postCompact'):
                         self.assertTrue(any(h['source']=='sessionFlags' and h['eventName']==event and h['trustStatus']=='trusted' for h in hooks),hooks)
                 self.assertEqual((home/'config.toml').read_text(),cfg)
 
