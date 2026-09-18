@@ -1,0 +1,5 @@
+__pycache__/
+installation.json
+tests/*-result.json
+windows/bin/
+windows/obj/
