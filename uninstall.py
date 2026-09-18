@@ -7,6 +7,8 @@ import subprocess
 ROOT=Path(__file__).resolve().parent
 
 def main():
+    from native import uninstall_hooks
+    uninstall_hooks()
     install=json.loads((ROOT/'installation.json').read_text())
     helper=Path(install['helper'])
     helperwin=subprocess.check_output(['wslpath','-w',str(helper)],text=True).strip()

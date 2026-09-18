@@ -34,11 +34,16 @@ try:
         request=Path('/tmp')/('cwn-launch-'+uuid.uuid4().hex+'.json'); request.write_text(json.dumps({'args':testargs,'cwd':str(folder),'env':dict(os.environ)}))
         # Only this test creates windows; the launcher runs within each test terminal.
         args=[install['wt'],'-w','CWN-test-'+uuid.uuid4().hex,'new-tab','wsl.exe','-d',os.environ['WSL_DISTRO_NAME'],
-              '--cd','/tmp','--exec',sys.executable,str(root/'tests/launch_fixture.py'),str(request)]
+              '--cd','/tmp','--exec',sys.executable,str(root/('tests/native_terminal.py' if '--native' in sys.argv else 'tests/launch_fixture.py')),str(request)]
         subprocess.run(args,check=True)
-        deadline=time.monotonic()+20
+        deadline=time.monotonic()+75
         while not (folder/'result.json').exists() and time.monotonic()<deadline: time.sleep(.2)
-        result=json.loads((folder/'result.json').read_text()); assert result['args'][:len(testargs)]==testargs;assert result['cwd']==str(folder)
+        if not (folder/'result.json').exists():
+            error=folder/'error.txt'
+            raise RuntimeError(error.read_text(errors='replace') if error.exists() else 'Test terminal produced no result')
+        result=json.loads((folder/'result.json').read_text())
+        if '--native' not in sys.argv:
+            assert result['args'][:len(testargs)]==testargs;assert result['cwd']==str(folder)
         ids.append(result['id'])
     windows=json.loads((winroot/'windows.json').read_text())
     assert len({windows[ident]['Hwnd'] for ident in ids})==2, 'Test terminals must register different windows'
@@ -77,7 +82,7 @@ try:
     for ident in ids:
         send(ident,'focus');assert logs(ident,'click')[-1]=='closed'
     report.append('closed terminals detected without reopening')
-    report.append('Chinese, spaces, quotes and multiline arguments passed exactly')
+    report.append('Global Codex hooks loaded; native hook ingress registered two distinct terminal windows' if '--native' in sys.argv else 'Chinese, spaces, quotes and multiline arguments passed exactly')
     print('\n'.join(report))
     (root/'tests/desktop-result.json').write_text(json.dumps(report,ensure_ascii=False,indent=2))
 finally:

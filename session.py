@@ -100,6 +100,13 @@ def hook_options(args=()):
 def run(req):
     os.environ.update(req.get('env',{}))
     os.chdir(req['cwd'])
+    from native import BEGIN, config_path
+    path=config_path()
+    if path.exists() and BEGIN in path.read_text():
+        # Compatibility with callers retaining the old launcher: global hooks
+        # already provide notifications, so do not inject a second set.
+        os.execv(req['codex'],[req['codex'],*req['args']])
+        return
     os.environ.update(CWN_ID=req['id'],CWN_HELPER=req['helper'],CWN_CWD=req['cwd'])
     try: os.environ['CWN_ORIGINAL_NOTIFY']=json.dumps(original_notify(Path.cwd(),req['args']))
     except Exception as exc:

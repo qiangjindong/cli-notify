@@ -53,12 +53,38 @@ def send(kind, payload=None):
     try:
         result = subprocess.run([os.environ['CWN_HELPER'],'--send'], input=json.dumps(event,ensure_ascii=False), text=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=8)
         log(kind, 'sent' if result.returncode==0 else 'helper-failed', payload)
+        return result.returncode==0
     except Exception as exc:
         log(kind, type(exc).__name__, payload)
+        return False
 
 def main():
     kind = sys.argv[1]
-    if kind=='question':
+    if kind=='native':
+        payload=json.load(sys.stdin)
+        event=payload.get('hook_event_name')
+        mapping={'SessionStart':'register','PreToolUse':'question','PermissionRequest':'approval','PostCompact':'compact','Stop':'complete'}
+        if event not in mapping: return
+        if event=='Stop': print('{}')
+        if event=='PreToolUse' and not payload.get('tool_name','').endswith('request_user_input'): return
+        identifiers={k:payload.get(k) for k in ('session_id','turn_id','tool_use_id','tool_call_id','cwd')}
+        if not isinstance(identifiers['session_id'],str) or not identifiers['session_id']: return
+        log('native-hook',event,identifiers)
+        if event in ('PermissionRequest','PostCompact'): identifiers['request_id']=uuid.uuid4().hex
+        subprocess.Popen([sys.executable,str(ROOT/'bridge.py'),'native-worker',mapping[event],json.dumps(identifiers)],stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,start_new_session=True)
+    elif kind=='native-worker':
+        event_kind=sys.argv[2]; payload=json.loads(sys.argv[3])
+        install=json.loads((ROOT/'installation.json').read_text())
+        os.environ.update(CWN_ID=hashlib.sha256(payload['session_id'].encode()).hexdigest()[:32],CWN_HELPER=install['helper'],CWN_CWD=payload.get('cwd') or os.getcwd())
+        if event_kind=='register' or user_completion({'thread-id':payload['session_id']}):
+            if event_kind!='register' and not send('register',payload):
+                log(event_kind,'registration-failed',payload)
+                return
+            if event_kind=='complete':
+                payload={'thread-id':payload['session_id'],'turn-id':payload.get('turn_id')}
+            send(event_kind,payload)
+        else: log(event_kind,'internal-or-unknown-suppressed',payload)
+    elif kind=='question':
         try:
             payload=json.load(sys.stdin)
             if payload.get('tool_name','').endswith('request_user_input'):

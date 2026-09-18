@@ -25,10 +25,9 @@ def main():
     helper=str(dest/'app/CodexWinNotify.exe')
     wtlinux=subprocess.check_output(['wslpath','-u',wt],text=True).strip()
     (ROOT/'installation.json').write_text(json.dumps({'helper':helper,'wt':wtlinux,'root':str(dest)}))
-    bindir=Path.home()/'.local/bin'; bindir.mkdir(parents=True,exist_ok=True)
-    link=bindir/'codex-window'
-    if link.exists() or link.is_symlink():
-        if not link.is_symlink() or link.resolve()!=ROOT/'codex-window': raise RuntimeError('codex-window already exists')
-    else: link.symlink_to(ROOT/'codex-window')
-    print('Installed: '+str(link))
+    from native import install_hooks
+    install_hooks()
+    link=Path.home()/'.local/bin/codex-window'
+    if link.is_symlink() and link.resolve()==ROOT/'codex-window': link.unlink()
+    print('已安装。重新启动原始 codex 即可使用提醒。')
 if __name__=='__main__': main()
