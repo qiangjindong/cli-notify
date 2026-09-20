@@ -32,6 +32,8 @@ def install_hooks():
     path = config_path()
     old = path.read_text() if path.exists() else ''
     base = remove_block(old)
+    if '# BEGIN codex-win-notify-windows' in base:
+        raise ValueError('WSL and Windows must use separate CODEX_HOME directories')
     config = tomllib.loads(base)
     hooks = config.get('hooks', {})
     from session import toml_value

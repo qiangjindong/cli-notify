@@ -157,7 +157,7 @@ class BridgeTests(unittest.TestCase):
         spec=importlib.util.spec_from_loader(loader.name,loader)
         launcher=importlib.util.module_from_spec(spec)
         loader.exec_module(launcher)
-        with patch.object(launcher,'run') as run, patch.object(launcher.shutil,'which',return_value='/bin/codex'), patch.object(sys,'argv',['codex-window','resume','--last']):
+        with patch('pathlib.Path.read_text',return_value='{"helper":"test-helper"}'), patch.object(launcher,'run') as run, patch.object(launcher.shutil,'which',return_value='/bin/codex'), patch.object(sys,'argv',['codex-window','resume','--last']):
             launcher.main()
             req=run.call_args.args[0]
             self.assertEqual(req['cwd'],os.getcwd())
@@ -165,6 +165,7 @@ class BridgeTests(unittest.TestCase):
             self.assertEqual(req['codex'],'/bin/codex')
             self.assertNotIn('env',req)
 
+    @unittest.skipIf(os.name == 'nt', 'WSL session-flag trust uses POSIX paths')
     def test_existing_config_hooks_and_notify_preserved(self):
         with tempfile.TemporaryDirectory() as temp:
             home=Path(temp)

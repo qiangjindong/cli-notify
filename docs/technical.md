@@ -4,6 +4,42 @@
 
 已针对 WSL Ubuntu-22.04、Codex 0.155.0、Windows Terminal 和 .NET 9 实现。
 
+## Windows 原生扩展（2026-09-20）
+
+新增 `install-windows.ps1` / `uninstall-windows.ps1` 和 C# `--hook` / `--hook-worker`。安装需要 Windows Codex、Windows Terminal、.NET 9 SDK 和 NuGet 网络；运行不依赖 Windows Python。默认配置位置为 `%USERPROFILE%\.codex`，支持 `CODEX_HOME` 或 `-CodexHome`。切换 Home 前应先卸载旧 Windows client。
+
+`--hook` 从 stdin 读取 JSON，Stop 先输出 `{}`，再保留 session/turn/tool 标识和目录名，计算摘要并捕获 HWND/PID/启动时间。脱敏结果通过 stdin 发给无窗口 worker，不把问答和命令放入进程参数。worker 用 `Microsoft.Data.Sqlite` 只读查询来源，只有 `thread_source=user` 才发送四类提醒；缺失、内部线程、结构不兼容均抑制。SessionStart 只登记窗口。每次提醒重新登记，登记失败不使用旧窗口。原有 Named Pipe、Toast、去重和点击恢复共用。
+
+Windows hook 配置使用官方支持的 `command_windows`，POSIX fallback 为 `:`。实测 `cmd /C` 引号边界会破坏带空格的 exe 命令，因此使用系统 Windows PowerShell 的 `-EncodedCommand` 做纯 stdin/stdout 转接，hook 业务仍在 C# 中。编码命令不含用户问答，路径按 PowerShell 字符串转义；无需 8.3 短路径。系统目录本身包含空白或 shell 扩展字符时拒绝安装。此方案增加一次 PowerShell 启动开销；不是 `codex` 的 PATH shim。
+
+`Tomlyn` 校验配置，但不重写已有文本，只追加/移除 `codex-win-notify-windows` 标记块。首次备份为 `codex-win-notify.windows.config.backup`。Codex 0.155.1 的信任摘要按平台解析后的命令计算，已通过真实 `hooks/list` 验证五项均 trusted；已有 notify、hook、信任配置保留。参考：[官方 hooks 文档](https://developers.openai.com/zh-Hans/docs/hooks)。
+
+两侧使用同一个 Windows `install.lock` 文件共享模式锁串行安装卸载。`clients/windows.json` 记录 Windows Home；`clients/wsl-<摘要>.json` 按发行版和 WSL 配置路径区分。还有其他 client 时保留助手，最后一个 client 才卸载 Toast 并清除数据，保留空锁文件。遇到旧版 WSL `build` 目录且没有 client 清单时，Windows 卸载保守保留助手。旧版 WSL 卸载器不认识清单，必须更新后重装再用于共存卸载。共享同一个 Codex Home 会改变 hook 索引和信任键，首版明确拒绝；应使用两个独立 Home。
+
+Windows 验证命令（测试使用 Python，产品安装/运行不需要）：
+
+```powershell
+dotnet run --project tests/windows/WindowsTests.csproj -c Release
+$env:PYTHONUTF8 = '1'
+python -m unittest discover -s tests -p 'test_*.py' -v
+python tests/windows_desktop.py --registration-only
+python tests/windows_desktop.py --background-only
+python tests/windows_desktop.py
+```
+
+本轮验收：
+
+- Release 编译零警告/错误；17 项 C# 检查通过，覆盖脱敏、事件去重、参数化只读来源过滤、配置保留、重装和非法配置拒绝。
+- Windows Python 测试 23 项通过，2 项 POSIX 路径/信任专属检查跳过；真实 Codex 0.155.1 `hooks/list` 确认五类 hook 可信，原有 hook 未被自动信任。
+- 含中文、空格和 `&` 的安装路径通过实际 `cmd /C` 执行 Stop，正确返回 `{}`。安装器用隔离的临时 Codex Home 实测重装幂等、卸载配置清除、旧 WSL 助手保留；未修改用户默认 Windows Codex 配置。
+- 两个真实 Windows Terminal 原生窗口分别通过合成 SessionStart 登记不同 HWND。
+- 等待 Terminal 异步启动/激活稳定后，两个后台窗口各自真实执行四类合成 hook，均发送通知且前台不变。初次测试未等待窗口启动稳定，出现前台漂移；增加等待后后台专项通过。
+- 完整桌面测试仍未通过：测试进程请求将目标窗口切到前台被 Windows 拒绝，等待前台窗口超时。因此本轮未验证原生端前台抑制、最小化恢复和通知点击；不将后台专项结果替代完整桌面验收。
+- WSL 回归尝试被环境阻塞：本机默认 Python 为 3.10，没有 `tomllib`，未发现现成 3.11+ 解释器。未改变现有 WSL 运行环境；其安装/卸载改动需在满足原有 Python 3.11+ 要求的环境复验。
+- 真实 Codex TUI 的 SessionStart/提问/审批/压缩/Stop、`windows.sandbox=elevated` 与 `unelevated`、系统通知点击和 COM 重新激活仍待验收。未增加启动 shim；是否需要取决于真实 hook 进程模型。
+
+以下既有桌面结果来自 WSL，不代表 Windows 原生端到端验收。
+
 ## 使用
 
 在想工作的目录执行：

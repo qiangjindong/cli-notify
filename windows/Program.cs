@@ -13,38 +13,22 @@ static class Program {
     static readonly object Gate = new();
     static readonly Dictionary<string, Window> Windows = new();
     static readonly HashSet<string> Seen = new();
-    static void Log(string id, string kind, string result) {
-        lock(Gate) File.AppendAllText(Path.Combine(Root, "helper.log"), JsonSerializer.Serialize(new { at=DateTime.UtcNow, id, kind, result }) + "\n");
+    internal static void Log(string id, string kind, string result) {
+        try { lock(Gate) File.AppendAllText(Path.Combine(Root, "helper.log"), JsonSerializer.Serialize(new { at=DateTime.UtcNow, id, kind, result }) + "\n"); }
+        catch { /* Logging must never change hook/tool behavior. */ }
     }
     [STAThread] static void Main(string[] args) {
-        Directory.CreateDirectory(Root);
         try {
+            Directory.CreateDirectory(Root);
+            if(args.Contains("--hook")) { HookBridge.Run(); return; }
+            if(args.Contains("--hook-worker")) { HookBridge.Dispatch(); return; }
+            if(args.Length == 3 && args[0] == "--configure") { HookConfig.Update(args[1], args[2]); return; }
             if (args.Contains("--send")) {
                 var input = Console.In.ReadToEnd();
                 if (input.Length > 16384) return;
                 var evt = JsonSerializer.Deserialize<Event>(input)!;
-                if(evt.Kind == "register" && evt.Hwnd == 0) {
-                    // WinExe has no console by default. Attach to the WSL interop parent.
-                    bool attached = false;
-                    try {
-                        if(GetConsoleWindow() == 0) attached = AttachConsole(uint.MaxValue);
-                        var h = GetAncestor(GetConsoleWindow(), 3); // GA_ROOTOWNER
-                        if(h == 0 || !IsWindowVisible(h)) throw new InvalidOperationException("terminal-window-not-found");
-                        GetWindowThreadProcessId(h, out uint pid);
-                        using var process = Process.GetProcessById((int)pid);
-                        evt = evt with { Hwnd=h.ToInt64(), Pid=(int)pid, Started=process.StartTime.ToUniversalTime().Ticks };
-                        input = JsonSerializer.Serialize(evt);
-                    } finally { if(attached) FreeConsole(); }
-                }
-                using var client = new NamedPipeClientStream(".", Pipe, PipeDirection.InOut);
-                try { client.Connect(400); } catch(TimeoutException) {
-                    Process.Start(new ProcessStartInfo(Environment.ProcessPath!, "--serve") { UseShellExecute=true, WindowStyle=ProcessWindowStyle.Hidden });
-                    client.Connect(5000);
-                }
-                using var writer = new StreamWriter(client, new UTF8Encoding(false), leaveOpen:true) { AutoFlush=true };
-                writer.WriteLine(input);
-                using var reader = new StreamReader(client, leaveOpen:true);
-                if(reader.ReadLine() != "ok") Environment.ExitCode=1;
+                if(evt.Kind == "register" && evt.Hwnd == 0) evt = CaptureWindow(evt);
+                Send(evt);
                 return;
             }
             if(args.Contains("--uninstall")) { ToastNotificationManagerCompat.Uninstall(); return; }
@@ -76,7 +60,30 @@ static class Program {
                 }
             });
             Application.Run();
-        } catch(Exception ex) { Log("", "helper", ex.GetType().Name); Environment.ExitCode=1; }
+        } catch(Exception ex) { Log("", "helper", ex.GetType().Name); Environment.ExitCode=args.Contains("--hook") ? 0 : 1; }
+    }
+    internal static Event CaptureWindow(Event evt) {
+        bool attached = false;
+        try {
+            if(GetConsoleWindow() == 0) attached = AttachConsole(uint.MaxValue);
+            var h = GetAncestor(GetConsoleWindow(), 3); // GA_ROOTOWNER
+            if(h == 0 || !IsWindowVisible(h)) throw new InvalidOperationException("terminal-window-not-found");
+            GetWindowThreadProcessId(h, out uint pid);
+            using var process = Process.GetProcessById((int)pid);
+            return evt with { Hwnd=h.ToInt64(), Pid=(int)pid, Started=process.StartTime.ToUniversalTime().Ticks };
+        } finally { if(attached) FreeConsole(); }
+    }
+    internal static void Send(Event evt) {
+        using var client = new NamedPipeClientStream(".", Pipe, PipeDirection.InOut, PipeOptions.Asynchronous);
+        try { client.Connect(400); } catch(TimeoutException) {
+            Process.Start(new ProcessStartInfo(Environment.ProcessPath!, "--serve") { UseShellExecute=true, WindowStyle=ProcessWindowStyle.Hidden });
+            client.Connect(5000);
+        }
+        using var writer = new StreamWriter(client, new UTF8Encoding(false), leaveOpen:true) { AutoFlush=true };
+        writer.WriteLine(JsonSerializer.Serialize(evt));
+        using var reader = new StreamReader(client, leaveOpen:true);
+        using var timeout = new CancellationTokenSource(10000);
+        if(reader.ReadLineAsync(timeout.Token).AsTask().GetAwaiter().GetResult() != "ok") throw new IOException("registration-or-send-failed");
     }
     static void Handle(Event e) {
         if(!Guid.TryParseExact(e.Id,"N",out _)) throw new ArgumentException("id");

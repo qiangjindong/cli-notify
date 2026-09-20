@@ -1,8 +1,22 @@
-# WSL Codex Windows 通知
+# Codex Windows 通知
 
 Codex 在后台完成任务、等待你回答或等待审批时，向 Windows 发送通知。点击通知即可回到原来的终端窗口。
 
 ## 安装
+
+### Windows 原生 Codex（验证性实现）
+
+需要 Windows 原生 Codex、Windows Terminal 和 Windows .NET 9 SDK，不需要 Python。在 PowerShell 中进入项目目录运行：
+
+```powershell
+.\install-windows.ps1
+```
+
+默认修改 `%USERPROFILE%\.codex\config.toml`；设置了 `CODEX_HOME` 时使用该目录，也可传入 `-CodexHome`。安装后重启 Codex，仍直接运行 `codex`。
+
+已验证构建、配置/信任、安装卸载和两个原生终端的合成 hook 窗口登记。真实 Codex 双窗口、通知点击及两种 sandbox 模式尚未完成验收，详见技术说明。
+
+### WSL
 
 先确认你正在 **WSL Ubuntu** 终端中，并已安装：
 
@@ -24,6 +38,14 @@ Codex 在后台完成任务、等待你回答或等待审批时，向 Windows �
 
 在本项目目录运行：
 
+Windows：
+
+```powershell
+.\uninstall-windows.ps1
+```
+
+WSL：
+
 ```sh
 ./uninstall.sh
 ```
@@ -32,8 +54,10 @@ Codex 在后台完成任务、等待你回答或等待审批时，向 Windows �
 
 ## 使用限制
 
-目前支持 WSL Ubuntu、Windows Terminal 和 Codex 0.155.0。每个 Windows Terminal 窗口请只使用一个标签页且不要分屏，否则通知可能无法定位到正确位置。
+WSL 基线为 Ubuntu、Codex 0.155.0；Windows 原生扩展针对 Codex 0.155.1 实现。每个 Windows Terminal 窗口请只使用一个标签页且不要分屏，否则通知可能无法定位到正确位置。
 
-安装和卸载均不需要管理员权限。程序不会读取或发送你的问题、回答、命令或 Codex 输出。
+WSL 和 Windows 必须使用独立的 Codex Home。共存时先更新 WSL 侧源码并重新安装，让两侧都使用带 client 清单的新卸载器；旧版 WSL 卸载器会无条件删除共享助手。新版只在最后一个 client 卸载时清除共享助手。
+
+安装和卸载均不需要管理员权限。hook 输入仅在内存中解析；后台事件和日志不保留问题、回答、命令或 Codex 完成文本。
 
 开发、实现原理、日志和验收说明见 [技术说明](docs/technical.md)。

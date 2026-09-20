@@ -7,19 +7,28 @@ import subprocess
 ROOT=Path(__file__).resolve().parent
 
 def main():
-    from native import uninstall_hooks
-    uninstall_hooks()
+    from native import uninstall_hooks, config_path
     install=json.loads((ROOT/'installation.json').read_text())
+    if install.get('home') and str(config_path().parent.resolve()) != install['home']:
+        raise RuntimeError('CODEX_HOME does not match the installed WSL client')
     helper=Path(install['helper'])
-    helperwin=subprocess.check_output(['wslpath','-w',str(helper)],text=True).strip()
-    ps='/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe'
-    # Only terminate the exact installed helper executable.
-    literal="'"+helperwin.replace("'","''")+"'"
-    subprocess.run([ps,'-NoProfile','-Command',f'Get-Process CodexWinNotify -ErrorAction SilentlyContinue | Where-Object {{ $_.Path -eq {literal} }} | Stop-Process -Force'],check=True)
-    subprocess.run([str(helper),'--uninstall'],check=True,timeout=15)
     dest=Path(install['root'])
     if dest.name!='CodexWinNotify' or helper.parent.parent!=dest: raise RuntimeError('Unexpected installation path')
-    shutil.rmtree(dest)
+    from clients import installation_lock, release
+    with installation_lock(dest):
+        uninstall_hooks()
+        if release(dest, install.get('client')):
+            helperwin=subprocess.check_output(['wslpath','-w',str(helper)],text=True).strip()
+            ps='/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe'
+            literal="'"+helperwin.replace("'","''")+"'"
+            subprocess.run([ps,'-NoProfile','-Command',f'Get-Process CodexWinNotify -ErrorAction SilentlyContinue | Where-Object {{ $_.Path -eq {literal} }} | Stop-Process -Force'],check=True)
+            subprocess.run([str(helper),'--uninstall'],check=True,timeout=15)
+            for child in dest.iterdir():
+                if child.name == 'install.lock': continue
+                if child.is_dir(): shutil.rmtree(child)
+                else: child.unlink()
+        elif not any((dest/'clients').glob('wsl-*.json')) and (dest/'build').exists():
+            shutil.rmtree(dest/'build')
     link=Path.home()/'.local/bin/codex-window'
     if link.is_symlink() and link.resolve()==ROOT/'codex-window': link.unlink()
     state=Path(__import__('os').environ.get('XDG_STATE_HOME',str(Path.home()/'.local/state')))/'codex-win-notify'

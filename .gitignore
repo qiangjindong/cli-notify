@@ -3,3 +3,5 @@ installation.json
 tests/*-result.json
 windows/bin/
 windows/obj/
+tests/windows/bin/
+tests/windows/obj/
