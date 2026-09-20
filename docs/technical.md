@@ -6,7 +6,7 @@
 
 ## Windows 原生扩展（2026-09-20）
 
-新增 `install-windows.ps1` / `uninstall-windows.ps1` 和 C# `--hook` / `--hook-worker`。安装需要 Windows Codex、Windows Terminal、.NET 9 SDK 和 NuGet 网络；运行不依赖 Windows Python。默认配置位置为 `%USERPROFILE%\.codex`，支持 `CODEX_HOME` 或 `-CodexHome`。切换 Home 前应先卸载旧 Windows client。
+新增 `install.ps1` / `uninstall.ps1` 和 C# `--hook` / `--hook-worker`。安装需要 Windows Codex、Windows Terminal、.NET 9 SDK 和 NuGet 网络；运行不依赖 Windows Python。默认配置位置为 `%USERPROFILE%\.codex`，支持 `CODEX_HOME` 或 `-CodexHome`。切换 Home 前应先卸载旧 Windows client。
 
 `--hook` 从 stdin 读取 JSON，Stop 先输出 `{}`，再保留 session/turn/tool 标识和目录名，计算摘要并捕获 HWND/PID/启动时间。脱敏结果通过 stdin 发给无窗口 worker，不把问答和命令放入进程参数。worker 用 `Microsoft.Data.Sqlite` 只读查询来源，只有 `thread_source=user` 才发送四类提醒；缺失、内部线程、结构不兼容均抑制。SessionStart 只登记窗口。每次提醒重新登记，登记失败不使用旧窗口。原有 Named Pipe、Toast、去重和点击恢复共用。
 

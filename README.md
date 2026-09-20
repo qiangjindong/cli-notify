@@ -9,7 +9,7 @@ Codex 在后台完成任务、等待你回答或等待审批时，向 Windows �
 需要 Windows 原生 Codex、Windows Terminal 和 Windows .NET 9 SDK，不需要 Python。在 PowerShell 中进入项目目录运行：
 
 ```powershell
-.\install-windows.ps1
+.\install.ps1
 ```
 
 默认修改 `%USERPROFILE%\.codex\config.toml`；设置了 `CODEX_HOME` 时使用该目录，也可传入 `-CodexHome`。安装后重启 Codex，仍直接运行 `codex`。
@@ -41,7 +41,7 @@ Codex 在后台完成任务、等待你回答或等待审批时，向 Windows �
 Windows：
 
 ```powershell
-.\uninstall-windows.ps1
+.\uninstall.ps1
 ```
 
 WSL：

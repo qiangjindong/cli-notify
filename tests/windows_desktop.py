@@ -1,6 +1,6 @@
 """Two native Windows Terminal fixtures; synthetic hooks, no model requests.
 
-Run after install-windows.ps1, or pass --helper pointing at a published helper.
+Run after install.ps1, or pass --helper pointing at a published helper.
 Only the fixtures open windows. Real toast clicks remain manual acceptance.
 """
 import ctypes
