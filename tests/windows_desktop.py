@@ -14,6 +14,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import tomllib
 import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -73,8 +74,8 @@ def main():
                 if (x:=json.loads(line))['id']==ident and x['kind']==kind]
     with tempfile.TemporaryDirectory(prefix='CWN 原生 桌面 ') as temp:
         home = Path(temp)
-        hooks = json.loads((ROOT/'hooks/hooks.json').read_text(encoding='utf-8'))
-        command = hooks['hooks']['Stop'][0]['hooks'][0]['commandWindows']
+        subprocess.run([helper, '--configure', 'install', home], check=True)
+        command = tomllib.loads((home/'config.toml').read_text(encoding='utf-8'))['hooks']['Stop'][0]['hooks'][0]['command_windows']
         try:
             for i in range(2):
                 folder = home/str(i); folder.mkdir(); folders.append(folder)

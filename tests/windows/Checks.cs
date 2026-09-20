@@ -40,11 +40,6 @@ static class Checks {
             var first = HookConfig.Install(old, config, @"C:\中文 空格 & test\CodexWinNotify.exe");
             Check(HookConfig.Install(first, config, @"C:\中文 空格 & test\CodexWinNotify.exe") == first, "idempotent");
             Check(HookConfig.Remove(first) == old, "preserve config");
-            var pluginBase = old + "[plugins.\"codex-win-notify@personal\"]\nenabled=true\n";
-            var plugin = HookConfig.InstallPlugin(pluginBase, config, "codex-win-notify@personal", Path.Combine(AppContext.BaseDirectory,"hooks.json"));
-            Check(plugin.Contains("codex-win-notify-plugin-trust") && plugin.Contains("hooks/hooks.json:stop:0:0"), "plugin trust");
-            Check(HookConfig.InstallPlugin(plugin, config, "codex-win-notify@personal", Path.Combine(AppContext.BaseDirectory,"hooks.json")) == plugin, "plugin trust idempotent");
-            Check(HookConfig.Remove(plugin) == pluginBase, "remove plugin trust");
             foreach(var invalid in new[] {"# BEGIN codex-win-notify-windows\n", "# END codex-win-notify-windows\n", "invalid = [", "# BEGIN codex-win-notify\n"}) {
                 bool failed = false; try { HookConfig.Install(invalid, config, @"C:\test.exe"); } catch { failed = true; }
                 Check(failed, "reject invalid/shared configuration");

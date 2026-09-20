@@ -23,7 +23,6 @@ static class Program {
             if(args.Contains("--hook")) { HookBridge.Run(); return; }
             if(args.Contains("--hook-worker")) { HookBridge.Dispatch(); return; }
             if(args.Length == 3 && args[0] == "--configure") { HookConfig.Update(args[1], args[2]); return; }
-            if(args.Length == 5 && args[0] == "--configure" && args[1] == "plugin") { HookConfig.UpdatePlugin(args[2], args[3], args[4]); return; }
             if(args.Contains("--test")) {
                 var id = Guid.NewGuid().ToString("N");
                 var cwd = new DirectoryInfo(Environment.CurrentDirectory).Name;

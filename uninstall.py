@@ -16,8 +16,7 @@ def main():
     if dest.name!='CodexWinNotify' or helper.parent.parent!=dest: raise RuntimeError('Unexpected installation path')
     from clients import installation_lock, release
     with installation_lock(dest):
-        from plugin import uninstall_plugin
-        if not uninstall_plugin(install): uninstall_hooks()
+        uninstall_hooks()
         if release(dest, install.get('client')):
             from clients import stop_helper
             stop_helper(helper)
