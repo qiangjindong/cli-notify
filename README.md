@@ -21,7 +21,7 @@ Codex 已完成
 .\install.ps1
 ```
 
-默认修改 `%USERPROFILE%\.codex\config.toml`；设置了 `CODEX_HOME` 时使用该目录，也可传入 `-CodexHome`。安装后重启 Codex，仍直接运行 `codex`。
+安装器会把通知 hooks 注册为个人 Codex plugin；设置了 `CODEX_HOME` 时使用该目录，也可传入 `-CodexHome`。安装命令不变，完成后会提示关闭所有正在运行的 Codex，再重新运行 `codex`。
 
 已验证构建、配置/信任、安装卸载和两个原生终端的合成 hook 窗口登记。真实 Codex 双窗口、通知点击及两种 sandbox 模式尚未完成验收，详见技术说明。
 
@@ -39,7 +39,7 @@ Codex 已完成
 ./install.sh
 ```
 
-看到“安装完成”后，关闭当前 Codex，再重新运行 `codex`。以后仍然照常使用 Codex，不需要改命令。
+安装器会把通知 hooks 注册为个人 Codex plugin。看到“安装完成”后，关闭所有正在运行的 Codex，再重新运行 `codex`。以后仍然照常使用 Codex，不需要改命令。
 
 ## 通知图标
 
@@ -91,7 +91,7 @@ WSL：
 ./uninstall.sh
 ```
 
-卸载不会删除本项目源码，也不会改动你原有的 Codex 配置。
+卸载不会删除本项目源码；只移除本工具的 plugin、信任记录和安装文件，保留其他 Codex 配置。
 
 ## 使用限制
 

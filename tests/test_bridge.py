@@ -15,6 +15,20 @@ from rpc import Client
 from session import hook_options,original_notify,toml_value
 
 class BridgeTests(unittest.TestCase):
+    def test_plugin_cache_reads_stable_installation_record(self):
+        with tempfile.TemporaryDirectory() as temp, tempfile.TemporaryDirectory() as cached:
+            state=Path(temp)/'codex-win-notify';state.mkdir()
+            (state/'installation.json').write_text('{"helper":"stable"}')
+            (Path(cached)/'installation.json').write_text('{"helper":"cached"}')
+            with patch.dict(os.environ,{'XDG_STATE_HOME':temp}),patch.object(bridge,'ROOT',Path(cached)):
+                self.assertEqual(bridge.installation()['helper'],'stable')
+
+    def test_old_installation_record_remains_compatible(self):
+        with tempfile.TemporaryDirectory() as temp, tempfile.TemporaryDirectory() as source:
+            (Path(source)/'installation.json').write_text('{"helper":"source"}')
+            with patch.dict(os.environ,{'XDG_STATE_HOME':temp}),patch.object(bridge,'ROOT',Path(source)):
+                self.assertEqual(bridge.installation()['helper'],'source')
+
     def test_event_excludes_question_and_answer(self):
         payload={'session_id':'s','tool_use_id':'t','tool_input':{'question':'PRIVATE QUESTION'},'answers':['PRIVATE ANSWER']}
         with patch.dict(os.environ,{'CWN_ID':'a'*32,'CWN_HELPER':'helper','CWN_CWD':'/tmp/中文 空格'}),patch('bridge.subprocess.run') as run,patch('bridge.log'):

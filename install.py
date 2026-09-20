@@ -84,14 +84,23 @@ def main():
         helper=str(dest/'app/CodexWinNotify.exe')
         wtlinux=subprocess.check_output(['wslpath','-u',wt],text=True).strip()
         print('[4/4] 配置 Codex 提醒…')
-        from native import install_hooks, config_path
+        from native import config_path
         from clients import register
         client = register(dest, config_path())
-        (ROOT/'installation.json').write_text(json.dumps({'helper':helper,'wt':wtlinux,'root':str(dest),'client':client,'home':str(config_path().parent.resolve())}))
-        install_hooks()
+        installation={'helper':helper,'wt':wtlinux,'root':str(dest),'client':client,'home':str(config_path().parent.resolve())}
+        (ROOT/'installation.json').write_text(json.dumps(installation))
+        state=Path(__import__('os').environ.get('XDG_STATE_HOME',str(Path.home()/'.local/state')))/'codex-win-notify'
+        state.mkdir(parents=True,exist_ok=True)
+        runtime_record=state/'installation.json'
+        runtime_record.write_text(json.dumps(installation))
+        runtime_record.chmod(0o600)
+        from plugin import install_plugin
+        installation.update(install_plugin(Path.cwd()))
+        (ROOT/'installation.json').write_text(json.dumps(installation))
+        runtime_record.write_text(json.dumps(installation))
     link=Path.home()/'.local/bin/codex-window'
     if link.is_symlink() and link.resolve()==ROOT/'codex-window': link.unlink()
-    print('\n安装完成。请关闭当前 Codex，再重新运行 codex。')
+    print('\n安装完成。请关闭所有正在运行的 Codex，再重新运行 codex 以加载通知 plugin。')
 
 if __name__=='__main__':
     try:

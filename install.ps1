@@ -1,6 +1,7 @@
 param([string]$CodexHome = $(if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $env:USERPROFILE '.codex' }))
 $ErrorActionPreference = 'Stop'
 . "$PSScriptRoot\windows\installation.ps1"
+. "$PSScriptRoot\windows\plugin.ps1"
 
 $CodexHome = [IO.Path]::GetFullPath($CodexHome)
 Get-Command codex.exe -ErrorAction Stop | Out-Null
@@ -52,6 +53,25 @@ try {
     # Keep a lease even if configuring fails, so another client cannot remove
     # files needed for a repair/retry of this installation.
     @{ home = $CodexHome; helper = $helper } | ConvertTo-Json | Set-Content -LiteralPath $manifest -Encoding UTF8
-    Invoke-Helper $helper @('--configure', 'install', $CodexHome)
-    Write-Host 'Installed. Close Codex and run codex again. Native desktop acceptance is documented in docs/technical.md.'
+    $configPath = Join-Path $CodexHome 'config.toml'
+    $configExisted = Test-Path -LiteralPath $configPath
+    $oldConfig = if ($configExisted) { Get-Content -Raw -LiteralPath $configPath } else { '' }
+    try {
+        $plugin = Prepare-PersonalPlugin $PSScriptRoot
+        $installed = Invoke-CodexPluginAdd $CodexHome $plugin.marketplace_name
+        if ($oldConfig.Contains('# BEGIN codex-win-notify-windows')) {
+            Invoke-Helper $helper @('--configure', 'remove-legacy', $CodexHome)
+            $installed = Invoke-CodexPluginAdd $CodexHome $plugin.marketplace_name
+        }
+        $hooksPath = Join-Path $installed.installedPath 'hooks\hooks.json'
+        Invoke-Helper $helper @('--configure', 'plugin', $CodexHome, $installed.pluginId, $hooksPath)
+        @{ home=$CodexHome; helper=$helper; plugin_id=$installed.pluginId; marketplace=$plugin.marketplace;
+           marketplace_name=$plugin.marketplace_name; plugin_source=$plugin.plugin_source } |
+            ConvertTo-Json | Set-Content -LiteralPath $manifest -Encoding UTF8
+    } catch {
+        if ($configExisted) { [IO.File]::WriteAllText($configPath, $oldConfig, [Text.UTF8Encoding]::new($false)) }
+        else { Remove-Item -LiteralPath $configPath -Force -ErrorAction SilentlyContinue }
+        throw
+    }
+    Write-Host 'Installed. Close every running Codex session, then run codex again to load the notification plugin.'
 } finally { $lock.Dispose() }

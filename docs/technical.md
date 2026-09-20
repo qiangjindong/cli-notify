@@ -10,9 +10,9 @@
 
 `--hook` 从 stdin 读取 JSON，Stop 先输出 `{}`，再保留 session/turn/tool 标识和目录名，计算摘要并捕获 HWND/PID/启动时间。脱敏结果通过 stdin 发给无窗口 worker，不把问答和命令放入进程参数。worker 用 `Microsoft.Data.Sqlite` 只读查询 `thread_source` 和 `name`，只有 `thread_source=user` 才发送四类提醒；缺失、内部线程、结构不兼容均抑制。SessionStart 只登记窗口。每次提醒重新登记，登记失败不使用旧窗口。原有 Named Pipe、Toast、去重和点击恢复共用。
 
-Windows hook 配置使用官方支持的 `command_windows`，POSIX fallback 为 `:`。实测 `cmd /C` 引号边界会破坏带空格的 exe 命令，因此使用系统 Windows PowerShell 的 `-EncodedCommand` 做纯 stdin/stdout 转接，hook 业务仍在 C# 中。编码命令不含用户问答，路径按 PowerShell 字符串转义；无需 8.3 短路径。系统目录本身包含空白或 shell 扩展字符时拒绝安装。此方案增加一次 PowerShell 启动开销；不是 `codex` 的 PATH shim。
+Plugin hook 配置使用官方支持的 `commandWindows`，POSIX fallback 指向 `${PLUGIN_ROOT}/bridge.py`。实测 `cmd /C` 引号边界会破坏带空格的 exe 命令，因此 Windows 命令使用系统 Windows PowerShell 的 `-EncodedCommand` 做纯 stdin/stdout 转接，hook 业务仍在 C# 中。编码命令不含用户问答，路径按 PowerShell 字符串转义；无需 8.3 短路径。此方案增加一次 PowerShell 启动开销；不是 `codex` 的 PATH shim。
 
-`Tomlyn` 校验配置，但不重写已有文本，只追加/移除 `codex-win-notify-windows` 标记块。首次备份为 `codex-win-notify.windows.config.backup`。Codex 0.155.1 的信任摘要按平台解析后的命令计算，已通过真实 `hooks/list` 验证五项均 trusted；已有 notify、hook、信任配置保留。参考：[官方 hooks 文档](https://developers.openai.com/zh-Hans/docs/hooks)。
+安装器通过个人 marketplace 安装 plugin，并只为五个已解析命令追加/移除 `codex-win-notify-plugin-trust` 信任块；已有 notify、hook 和其他信任配置保留。升级时会移除旧版 `codex-win-notify-windows` 内联配置块。Codex 0.155.1 的信任摘要按平台解析后的命令计算，已通过真实 `hooks/list` 验证五项均 trusted。参考：[官方 hooks 文档](https://developers.openai.com/zh-Hans/docs/hooks)和[官方 plugin 打包文档](https://developers.openai.com/zh-Hans/plugins/build/plugins)。
 
 两侧使用同一个 Windows `install.lock` 文件共享模式锁串行安装卸载。`clients/windows.json` 记录 Windows Home；`clients/wsl-<摘要>.json` 按发行版和 WSL 配置路径区分。还有其他 client 时保留助手，最后一个 client 才卸载 Toast 并清除数据，保留空锁文件。遇到旧版 WSL `build` 目录且没有 client 清单时，Windows 卸载保守保留助手。旧版 WSL 卸载器不认识清单，必须更新后重装再用于共存卸载。共享同一个 Codex Home 会改变 hook 索引和信任键，首版明确拒绝；应使用两个独立 Home。
 
@@ -29,13 +29,12 @@ python tests/windows_desktop.py
 
 本轮验收：
 
-- Release 编译零警告/错误；21 项 C# 检查通过，覆盖脱敏、事件去重、参数化只读来源与线程名查询、空名回退、通知状态文本、配置保留、重装和非法配置拒绝。
-- Windows Python 测试 23 项通过，2 项 POSIX 路径/信任专属检查跳过；真实 Codex 0.155.1 `hooks/list` 确认五类 hook 可信，原有 hook 未被自动信任。
-- 含中文、空格和 `&` 的安装路径通过实际 `cmd /C` 执行 Stop，正确返回 `{}`。安装器用隔离的临时 Codex Home 实测重装幂等、卸载配置清除、旧 WSL 助手保留；未修改用户默认 Windows Codex 配置。
+- Release 编译零警告/错误；24 项 C# 检查通过，覆盖脱敏、事件去重、参数化只读来源与线程名查询、空名回退、通知状态文本、plugin 信任、配置保留、重装和非法配置拒绝。
+- Python 测试共运行 42 项并成功结束，其中 2 项 Windows-only 集成检查在 WSL 跳过；plugin 结构校验通过。隔离 Codex Home 的真实 `hooks/list` 确认五类 hook 均来自 plugin、写入信任后均为 trusted，原有 hook 未被自动信任。
+- 含中文、空格和 `&` 的安装路径通过实际 `cmd /C` 执行 Stop，正确返回 `{}`。安装器用隔离环境实测旧内联配置迁移、重装幂等、卸载配置清除、个人 marketplace 其他条目保留和旧 WSL 助手保留；未修改用户默认 Windows Codex 配置。
 - 两个真实 Windows Terminal 原生窗口分别通过合成 SessionStart 登记不同 HWND。
 - 等待 Terminal 异步启动/激活稳定后，两个后台窗口各自真实执行四类合成 hook，均发送通知且前台不变。初次测试未等待窗口启动稳定，出现前台漂移；增加等待后后台专项通过。
 - 完整桌面测试仍未通过：测试进程请求将目标窗口切到前台被 Windows 拒绝，等待前台窗口超时。因此本轮未验证原生端前台抑制、最小化恢复和通知点击；不将后台专项结果替代完整桌面验收。
-- WSL 回归尝试被环境阻塞：本机默认 Python 为 3.10，没有 `tomllib`，未发现现成 3.11+ 解释器。未改变现有 WSL 运行环境；其安装/卸载改动需在满足原有 Python 3.11+ 要求的环境复验。
 - 真实 Codex TUI 的 SessionStart/提问/审批/压缩/Stop、`windows.sandbox=elevated` 与 `unelevated`、系统通知点击和 COM 重新激活仍待验收。未增加启动 shim；是否需要取决于真实 hook 进程模型。
 
 以下既有桌面结果来自 WSL，不代表 Windows 原生端到端验收。
@@ -65,17 +64,19 @@ python3 install.py
 python3 uninstall.py
 ```
 
-安装需要 WSL Python 3.11+、Windows .NET 9 SDK、Windows Terminal、WSL Windows 互操作和 NuGet 网络连接。安装至 `%LOCALAPPDATA%\CodexWinNotify`，用户配置自动加载提醒 hooks。助手按需启动，无管理员权限要求，无开机启动。
+安装需要 WSL Python 3.11+、Windows .NET 9 SDK、Windows Terminal、WSL Windows 互操作和 NuGet 网络连接。安装至 `%LOCALAPPDATA%\CodexWinNotify`，并在个人 marketplace 中注册 `codex-win-notify` plugin。助手按需启动，无管理员权限要求，无开机启动。
 
 通知图标由源码根目录的 `codex-win-notify.json` 中 `notification.icon` 配置。安装器校验 PNG 路径，以 Windows `System.Drawing` 将其转换为包含 16–256px 九档 PNG 图像的 ICO，再通过 MSBuild `ApplicationIcon` 嵌入助手 EXE；因此图标位于通知标题栏的应用身份位置，而不是 Toast 正文的 `appLogoOverride` 图片位。相对路径以源码根目录为基准，`null` 表示不嵌入自定义应用图标。配置只在安装时读取，修改后需要重新安装。
 
-重新安装会停止本工具的助手并更新文件；下一次事件会重新启动助手。卸载停止助手，调用通知组件的 `Uninstall()` 清理通知与注册，再删除 Windows 安装文件、本工具配置块和 WSL 状态目录。保留此源码目录便于审查；保留原有 Codex 配置。
+重新安装会停止本工具的助手、刷新个人 plugin 并更新文件；下一次事件会重新启动助手。卸载停止助手，调用通知组件的 `Uninstall()` 清理通知与注册，再删除 Windows 安装文件、plugin 条目、对应信任块和 WSL 状态目录。保留此源码目录便于审查；保留其他 Codex 配置。
 
 ## 配置与失败处理
 
-安装器在 `${CODEX_HOME:-~/.codex}/config.toml` 追加带标记的配置块，配置 `SessionStart`、`PreToolUse`、`PermissionRequest`、`PostCompact` 和 `Stop`。原始 `codex` 自动加载这些 hooks，无需 alias、PATH 包装或修改 Codex 可执行文件。`SessionStart` 登记会话对应窗口；每次提醒也先登记当前窗口，避免依赖启动 hook 的触发时机，然后按会话标识发送提醒，完成提醒使用 `Stop`。原有 `notify` 不修改，继续由 Codex 调用。已有 hooks 和信任状态保留，只信任本工具五个确切 hook。
+安装器把 `.codex-plugin/plugin.json`、`hooks/hooks.json` 和 WSL bridge 复制到个人 plugin 源目录，通过 Codex CLI 安装并启用 plugin。五类 hook 为 `SessionStart`、`PreToolUse`、`PermissionRequest`、`PostCompact` 和 `Stop`；原始 `codex` 自动加载，无需 alias、PATH 包装或修改 Codex 可执行文件。`SessionStart` 登记会话对应窗口；每次提醒也先登记当前窗口，避免依赖启动 hook 的触发时机，然后按会话标识发送提醒，完成提醒使用 `Stop`。原有 `notify` 不修改。
 
-重装替换本工具配置块；卸载只移除该块。首次修改已有配置时保存 `codex-win-notify.config.backup`，不会用备份覆盖后续用户修改。hooks 在新进程启动时加载，安装后须退出并重新运行 `codex`。显式关闭 hooks 会关闭全部四类提醒。
+WSL 命令通过 `${PLUGIN_ROOT}` 定位物化后的 `bridge.py`；WSL 安装记录另存于 `${XDG_STATE_HOME:-~/.local/state}/codex-win-notify/installation.json`，并兼容读取旧的源码目录记录。Windows 命令从 `%LOCALAPPDATA%\CodexWinNotify\app` 启动已安装助手，不依赖 plugin 缓存路径。
+
+初次安装时，Codex 按安全模型把 plugin hooks 标为 `untrusted`；安装器读取 `hooks/list` 返回的精确键和摘要，只信任本工具五项。`config.toml` 因此只保留 Codex 自己写入的 plugin enablement 和五条简短的 `hooks.state`，不再展开五套命令定义。重装刷新 plugin 和信任块；卸载只移除本工具的 plugin、marketplace 条目和信任块。hooks 在新进程启动时加载，安装/升级后必须关闭所有 Codex 进程再重新运行；安装脚本会明确输出该提示。显式关闭 hooks 会关闭全部四类提醒。
 
 hook 立即分离通知工作进程，不等待点击、回答或审批；`Stop` 仅输出空 JSON，其余无输出。事件不携带命令、提问、回答或完成文本。登记或桥接失败记录日志后继续 Codex。
 
@@ -109,7 +110,7 @@ python3 tests/real_hook.py
 - 前台完成/提问/审批/压缩均抑制；后台完成/提问/审批/压缩均发送；通知发送不切换前台；重复事件抑制。桌面测试直接发送事件验证助手，不代替真实命令审批或上下文压缩 hook 的端到端验收。
 - 在两个真实测试终端加载原始 Codex 配置，使用合成 hook 输入及隔离的测试来源数据库，验证无需启动包装的窗口登记；两个窗口分别聚焦；最小化恢复；助手重启后使用持久窗口身份；已关闭窗口检测。
 - 测试目录包含中文、空格和引号；不拦截或重新解析原始 Codex 参数。
-- 现有 hooks 和 notify 配置保留；安装可重复执行，卸载仅移除本工具配置块；桥接失败不抛出；日志无完整问答。
+- 现有 hooks 和 notify 配置保留；安装可重复执行，旧版内联配置可迁移，卸载仅移除本工具 plugin 与信任块；桥接失败不抛出；日志无完整问答。
 
 此前版本还验证过真实 `request_user_input` hook 触发、测试答案后继续完成及完成 notify 触发；本次未重跑使用模型额度的测试；原始 CLI 的真实提问、完成、审批与压缩触发仍需端到端验收。
 
@@ -123,4 +124,4 @@ Get-Process CodexWinNotify -ErrorAction SilentlyContinue |
   Stop-Process -Force
 ```
 
-参考：[Codex hooks](https://learn.chatgpt.com/docs/hooks)、[0.155.0 hook 调度源码](https://github.com/openai/codex/blob/rust-v0.155.0/codex-rs/core/src/tools/registry.rs)、[Windows 通知激活与卸载](https://learn.microsoft.com/en-us/dotnet/api/microsoft.toolkit.uwp.notifications.toastnotificationmanagercompat?view=win-comm-toolkit-dotnet-7.1)。
+参考：[Codex hooks](https://developers.openai.com/zh-Hans/docs/hooks)、[Codex plugin 打包](https://developers.openai.com/zh-Hans/plugins/build/plugins)、[0.155.0 hook 调度源码](https://github.com/openai/codex/blob/rust-v0.155.0/codex-rs/core/src/tools/registry.rs)、[Windows 通知激活与卸载](https://learn.microsoft.com/en-us/dotnet/api/microsoft.toolkit.uwp.notifications.toastnotificationmanagercompat?view=win-comm-toolkit-dotnet-7.1)。

@@ -7,6 +7,8 @@ using Tomlyn.Model;
 static class HookConfig {
     const string Begin = "# BEGIN codex-win-notify-windows";
     const string End = "# END codex-win-notify-windows";
+    const string PluginBegin = "# BEGIN codex-win-notify-plugin-trust";
+    const string PluginEnd = "# END codex-win-notify-plugin-trust";
     static readonly JsonSerializerOptions Json = new() { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
     static string Quote(string s) => JsonSerializer.Serialize(s, Json);
     static readonly (string Event, string Name, string? Matcher)[] Events = [
@@ -16,24 +18,26 @@ static class HookConfig {
         ("PostCompact", "post_compact", "^(manual|auto)$"), ("Stop", "stop", null)
     ];
 
-    internal static string Remove(string text) {
+    static string RemoveBlock(string text, string begin, string end) {
         // Match complete marker lines only, retaining all bytes outside our block.
-        var start = text.IndexOf(Begin, StringComparison.Ordinal);
+        var start = text.IndexOf(begin, StringComparison.Ordinal);
         if(start < 0) {
-            if(text.Contains(End)) throw new InvalidDataException("Orphan configuration marker");
+            if(text.Contains(end)) throw new InvalidDataException("Orphan configuration marker");
             return text;
         }
-        var end = text.IndexOf(End, start, StringComparison.Ordinal);
-        if(end < 0 || (start > 0 && text[start-1] != '\n') || text.IndexOf(Begin, start+Begin.Length, StringComparison.Ordinal) >= 0)
+        var finish = text.IndexOf(end, start, StringComparison.Ordinal);
+        if(finish < 0 || (start > 0 && text[start-1] != '\n') || text.IndexOf(begin, start+begin.Length, StringComparison.Ordinal) >= 0)
             throw new InvalidDataException("Incomplete or duplicated configuration block");
-        var tail = end + End.Length;
+        var tail = finish + end.Length;
         if(tail < text.Length && text[tail] == '\r') tail++;
         if(tail < text.Length && text[tail] == '\n') tail++;
         return text[..start] + text[tail..];
     }
+    internal static string RemoveLegacy(string text) => RemoveBlock(text, Begin, End);
+    internal static string Remove(string text) => RemoveBlock(RemoveLegacy(text), PluginBegin, PluginEnd);
 
     internal static string Install(string old, string configPath, string executable) {
-        var basis = Remove(old);
+        var basis = RemoveLegacy(old);
         if(basis.Contains("# BEGIN codex-win-notify\n") || basis.Contains("# BEGIN codex-win-notify\r\n"))
             throw new InvalidDataException("WSL and Windows must use separate CODEX_HOME directories");
         var model = Toml.ToModel(basis);
@@ -80,12 +84,51 @@ static class HookConfig {
         return result;
     }
 
+    internal static string InstallPlugin(string old, string configPath, string pluginId, string hooksPath) {
+        if(!pluginId.StartsWith("codex-win-notify@", StringComparison.Ordinal) || pluginId.Contains('"'))
+            throw new InvalidDataException("Unexpected plugin id");
+        var basis = Remove(old);
+        using var document = JsonDocument.Parse(File.ReadAllText(hooksPath));
+        var configured = document.RootElement.GetProperty("hooks");
+        var model = Toml.ToModel(basis);
+        var states = model.TryGetValue("hooks", out var hooksModel) && ((TomlTable)hooksModel).TryGetValue("state", out var stateModel)
+            ? (TomlTable)stateModel : new TomlTable();
+        var lines = new StringBuilder(PluginBegin + "\n");
+        foreach(var (ev, name, expectedMatcher) in Events) {
+            var groups = configured.GetProperty(ev).EnumerateArray().ToArray();
+            if(groups.Length != 1) throw new InvalidDataException("Unexpected plugin hook group");
+            var group = groups[0];
+            string? matcher = group.TryGetProperty("matcher", out var matcherValue) ? matcherValue.GetString() : null;
+            if(matcher != expectedMatcher) throw new InvalidDataException("Unexpected plugin hook matcher");
+            var handlers = group.GetProperty("hooks").EnumerateArray().ToArray();
+            if(handlers.Length != 1) throw new InvalidDataException("Unexpected plugin hook handler");
+            var source = handlers[0];
+            var handler = new SortedDictionary<string, object>(StringComparer.Ordinal) {
+                ["async"] = source.GetProperty("async").GetBoolean(),
+                ["command"] = source.GetProperty("commandWindows").GetString()!,
+                ["timeout"] = source.GetProperty("timeout").GetInt32(),
+                ["type"] = source.GetProperty("type").GetString()!
+            };
+            var identity = new SortedDictionary<string, object>(StringComparer.Ordinal) { ["event_name"] = name, ["hooks"] = new[] { handler } };
+            if(matcher != null) identity["matcher"] = matcher;
+            var key = $"{pluginId}:hooks/hooks.json:{name}:0:0";
+            if(states.ContainsKey(key)) throw new InvalidDataException("Plugin hook trust key already owned by another configuration");
+            lines.AppendLine("[hooks.state." + Quote(key) + "]");
+            lines.AppendLine("trusted_hash=" + Quote("sha256:" + HookBridge.Hash(JsonSerializer.Serialize(identity, Json))));
+        }
+        lines.AppendLine(PluginEnd);
+        var result = basis + (basis.Length == 0 || basis.EndsWith('\n') ? "" : "\n") + lines;
+        Toml.ToModel(result);
+        return result;
+    }
+
     internal static void Update(string action, string home) {
         var path = Path.Combine(Path.GetFullPath(home), "config.toml");
         var old = File.Exists(path) ? File.ReadAllText(path) : "";
         var result = action switch {
             "install" => Install(old, path, Path.Combine(AppContext.BaseDirectory, "CodexWinNotify.exe")),
             "check" => Install(old, path, Path.Combine(AppContext.BaseDirectory, "CodexWinNotify.exe")),
+            "remove-legacy" => RemoveLegacy(old),
             "uninstall" => Remove(old), _ => throw new ArgumentException("action")
         };
         if(action == "check" || result == old) return;
@@ -93,6 +136,16 @@ static class HookConfig {
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         var backup = Path.Combine(home, "codex-win-notify.windows.config.backup");
         if(File.Exists(path) && !File.Exists(backup)) File.Copy(path, backup);
+        var temp = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try { File.WriteAllText(temp, result, new UTF8Encoding(false)); File.Move(temp, path, true); }
+        finally { if(File.Exists(temp)) File.Delete(temp); }
+    }
+
+    internal static void UpdatePlugin(string home, string pluginId, string hooksPath) {
+        var path = Path.Combine(Path.GetFullPath(home), "config.toml");
+        var old = File.Exists(path) ? File.ReadAllText(path) : "";
+        var result = InstallPlugin(old, path, pluginId, hooksPath);
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         var temp = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
         try { File.WriteAllText(temp, result, new UTF8Encoding(false)); File.Move(temp, path, true); }
         finally { if(File.Exists(temp)) File.Delete(temp); }

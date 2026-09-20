@@ -12,9 +12,20 @@ import uuid
 
 ROOT = Path(__file__).resolve().parent
 
+def state_dir():
+    return Path(os.environ.get('XDG_STATE_HOME', str(Path.home()/'.local/state'))) / 'codex-win-notify'
+
+def installation():
+    """Read the WSL runtime record outside the materialized plugin cache."""
+    record = state_dir()/'installation.json'
+    if not record.is_file():
+        # Compatibility with installations made before plugin packaging.
+        record = ROOT/'installation.json'
+    return json.loads(record.read_text())
+
 def log(kind, result, payload=None):
     try:
-        path = Path(os.environ.get('XDG_STATE_HOME', str(Path.home()/'.local/state'))) / 'codex-win-notify'
+        path = state_dir()
         path.mkdir(parents=True, exist_ok=True)
         row = {'id':os.environ.get('CWN_ID',''), 'kind':kind, 'result':result}
         payload=payload or {}
@@ -77,7 +88,7 @@ def main():
         subprocess.Popen([sys.executable,str(ROOT/'bridge.py'),'native-worker',mapping[event],json.dumps(identifiers)],stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,start_new_session=True)
     elif kind=='native-worker':
         event_kind=sys.argv[2]; payload=json.loads(sys.argv[3])
-        install=json.loads((ROOT/'installation.json').read_text())
+        install=installation()
         os.environ.update(CWN_ID=hashlib.sha256(payload['session_id'].encode()).hexdigest()[:32],CWN_HELPER=install['helper'],CWN_CWD=payload.get('cwd') or os.getcwd())
         thread_name = '' if event_kind=='register' else user_thread_name(payload)
         if event_kind=='register' or thread_name is not None:
