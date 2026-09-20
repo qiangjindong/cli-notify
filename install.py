@@ -36,6 +36,11 @@ def check_requirements():
 def main():
     print('[1/4] 检查运行环境…')
     check_requirements()
+    from settings import notification_icon
+    try:
+        icon = notification_icon(ROOT)
+    except ValueError as exc:
+        raise InstallError(str(exc)) from exc
     from native import config_path
     record = ROOT/'installation.json'
     if record.exists():
@@ -57,13 +62,25 @@ def main():
         shutil.copy2(ROOT/'windows/CodexWinNotify.csproj',build/'CodexWinNotify.csproj')
         project=subprocess.check_output(['wslpath','-w',str(build/'CodexWinNotify.csproj')],text=True).strip()
         output=subprocess.check_output(['wslpath','-w',str(dest/'app')],text=True).strip()
+        app_icon=build/'app.ico'
+        publish=['/mnt/c/Program Files/dotnet/dotnet.exe','publish',project,'-c','Release','-r','win-x64','--self-contained','false','-o',output]
+        if icon is None:
+            app_icon.unlink(missing_ok=True)
+        else:
+            icon_input=subprocess.check_output(['wslpath','-w',str(icon)],text=True).strip()
+            icon_output=subprocess.check_output(['wslpath','-w',str(app_icon)],text=True).strip()
+            icon_script=subprocess.check_output(['wslpath','-w',str(ROOT/'windows/make-icon.ps1')],text=True).strip()
+            subprocess.run([PS,'-NoProfile','-ExecutionPolicy','Bypass','-File',icon_script,icon_input,icon_output],check=True)
+            publish.append(f'-p:ApplicationIcon={icon_output}')
         helper_path=dest/'app/CodexWinNotify.exe'
         if helper_path.exists():
-            winpath=subprocess.check_output(['wslpath','-w',str(helper_path)],text=True).strip()
-            literal="'"+winpath.replace("'","''")+"'"
-            subprocess.run([PS,'-NoProfile','-Command',f'Get-Process CodexWinNotify -ErrorAction SilentlyContinue | Where-Object {{ $_.Path -eq {literal} }} | Stop-Process -Force'],check=True)
+            from clients import stop_helper
+            stop_helper(helper_path)
         print('[3/4] 构建并安装通知程序（首次运行可能需要几分钟）…')
-        subprocess.run(['/mnt/c/Program Files/dotnet/dotnet.exe' ,'publish',project,'-c','Release','-r','win-x64','--self-contained','false','-o',output],check=True)
+        subprocess.run(publish,check=True)
+        for old_icon in dest.glob('notification-icon-*.png'):
+            old_icon.unlink()
+        (dest/'notification-icon.png').unlink(missing_ok=True)
         helper=str(dest/'app/CodexWinNotify.exe')
         wtlinux=subprocess.check_output(['wslpath','-u',wt],text=True).strip()
         print('[4/4] 配置 Codex 提醒…')

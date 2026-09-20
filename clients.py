@@ -38,3 +38,13 @@ def release(root, name):
             raise ValueError('Unexpected client name')
         (root/'clients'/name).unlink(missing_ok=True)
     return not any((root/'clients').glob('*.json'))
+
+def stop_helper(helper):
+    """Stop this installation's helper, if it is currently running."""
+    path = subprocess.check_output(['wslpath', '-w', str(helper)], text=True).strip()
+    literal = "'" + path.replace("'", "''") + "'"
+    # Keep Get-Process from being the pipeline's last failed command when no
+    # helper is running.  PowerShell otherwise exits with status 1 even though
+    # an absent process is already the state the installer needs.
+    script = f"$process = Get-Process CodexWinNotify -ErrorAction SilentlyContinue; $process | Where-Object {{ $_.Path -eq {literal} }} | Stop-Process -Force"
+    subprocess.run([PS, '-NoProfile', '-Command', script], check=True)

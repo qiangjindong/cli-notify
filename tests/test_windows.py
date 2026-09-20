@@ -8,10 +8,11 @@ import sys
 import tempfile
 import tomllib
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from rpc import Client
-from clients import register, release
+from clients import register, release, stop_helper
 
 ROOT = Path(__file__).resolve().parents[1]
 BUILD = ROOT/'windows/bin/Release/net9.0-windows10.0.17763.0'
@@ -58,6 +59,15 @@ class WindowsTests(unittest.TestCase):
             self.assertNotIn('Exception', result.stderr)
 
 class ClientTests(unittest.TestCase):
+    def test_stop_missing_helper_is_not_a_failed_pipeline(self):
+        with patch('clients.subprocess.check_output', return_value='C:\\app\\CodexWinNotify.exe\n'), \
+             patch('clients.subprocess.run') as run:
+            stop_helper(Path('/mnt/c/app/CodexWinNotify.exe'))
+        command = run.call_args.args[0]
+        self.assertIn('$process = Get-Process', command[-1])
+        self.assertIn('$process | Where-Object', command[-1])
+        self.assertTrue(run.call_args.kwargs['check'])
+
     def test_uninstall_retains_other_client(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)

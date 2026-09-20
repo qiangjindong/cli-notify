@@ -18,10 +18,8 @@ def main():
     with installation_lock(dest):
         uninstall_hooks()
         if release(dest, install.get('client')):
-            helperwin=subprocess.check_output(['wslpath','-w',str(helper)],text=True).strip()
-            ps='/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe'
-            literal="'"+helperwin.replace("'","''")+"'"
-            subprocess.run([ps,'-NoProfile','-Command',f'Get-Process CodexWinNotify -ErrorAction SilentlyContinue | Where-Object {{ $_.Path -eq {literal} }} | Stop-Process -Force'],check=True)
+            from clients import stop_helper
+            stop_helper(helper)
             subprocess.run([str(helper),'--uninstall'],check=True,timeout=15)
             for child in dest.iterdir():
                 if child.name == 'install.lock': continue

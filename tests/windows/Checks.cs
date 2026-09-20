@@ -33,7 +33,8 @@ static class Checks {
             Check(Program.NotificationStatus("complete") == "Codex 已完成"
                 && Program.NotificationStatus("question") == "Codex 需要回答"
                 && Program.NotificationStatus("approval") == "Codex 等待命令审批"
-                && Program.NotificationStatus("compact") == "Codex 上下文已压缩", "status bodies");
+                && Program.NotificationStatus("compact") == "Codex 上下文已压缩"
+                && Program.NotificationStatus("test") == "通知正常，点击可返回此终端", "status bodies");
             var old = "# existing\nnotify=['keep']\n[[hooks.Stop]]\n[[hooks.Stop.hooks]]\ntype='command'\ncommand='keep'\n";
             var config = Path.Combine(home, "config.toml");
             var first = HookConfig.Install(old, config, @"C:\中文 空格 & test\CodexWinNotify.exe");

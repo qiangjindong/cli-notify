@@ -23,7 +23,18 @@ static class Program {
             if(args.Contains("--hook")) { HookBridge.Run(); return; }
             if(args.Contains("--hook-worker")) { HookBridge.Dispatch(); return; }
             if(args.Length == 3 && args[0] == "--configure") { HookConfig.Update(args[1], args[2]); return; }
+            if(args.Contains("--test")) {
+                var id = Guid.NewGuid().ToString("N");
+                var cwd = new DirectoryInfo(Environment.CurrentDirectory).Name;
+                var registration = CaptureWindow(new Event(id, "register", cwd));
+                Send(registration);
+                Send(registration with { Kind="test", ThreadName="Codex Windows 通知测试" });
+                return;
+            }
             if (args.Contains("--send")) {
+                // WSL writes JSON as UTF-8; do not decode it with the Windows
+                // console code page or non-ASCII thread names become mojibake.
+                Console.InputEncoding = new UTF8Encoding(false);
                 var input = Console.In.ReadToEnd();
                 if (input.Length > 16384) return;
                 var evt = JsonSerializer.Deserialize<Event>(input)!;
@@ -97,8 +108,12 @@ static class Program {
             }
             if(e.Kind=="forget") { ToastNotificationManagerCompat.History.Remove(e.Id[..16],"Codex"); Windows.Remove(e.Id); File.WriteAllText(Path.Combine(Root,"windows.json"),JsonSerializer.Serialize(Windows)); return; }
             if(e.Kind=="focus") { Focus(e.Id); return; }
-            if(e.Kind!="complete" && e.Kind!="question" && e.Kind!="approval" && e.Kind!="compact") return;
+            if(e.Kind!="complete" && e.Kind!="question" && e.Kind!="approval" && e.Kind!="compact" && e.Kind!="test") return;
             if(!Windows.TryGetValue(e.Id,out var w) || !Valid(w)) { Log(e.Id,e.Kind,"invalid-window"); return; }
+            if(e.Kind=="test") {
+                Toast(e.Id,NotificationTitle(e,w),NotificationStatus(e.Kind));
+                Log(e.Id,e.Kind,"notified"); return;
+            }
             if(e.Key.Length>0 && !Seen.Add(e.Id+":"+e.Kind+":"+e.Key)) { Log(e.Id,e.Kind,"duplicate"); return; }
             if(Seen.Count>10000) { Seen.Clear(); if(e.Key.Length>0) Seen.Add(e.Id+":"+e.Kind+":"+e.Key); }
             var seenFile=Path.Combine(Root,"events.json"); File.WriteAllText(seenFile+".tmp",JsonSerializer.Serialize(Seen)); File.Move(seenFile+".tmp",seenFile,true);
@@ -108,7 +123,7 @@ static class Program {
         }
     }
     internal static string NotificationTitle(Event e, Window w) => string.IsNullOrWhiteSpace(e.ThreadName) ? w.Cwd : e.ThreadName;
-    internal static string NotificationStatus(string kind) => kind switch { "complete" => "Codex 已完成", "approval" => "Codex 等待命令审批", "compact" => "Codex 上下文已压缩", _ => "Codex 需要回答" };
+    internal static string NotificationStatus(string kind) => kind switch { "complete" => "Codex 已完成", "approval" => "Codex 等待命令审批", "compact" => "Codex 上下文已压缩", "test" => "通知正常，点击可返回此终端", _ => "Codex 需要回答" };
     static void Toast(string id,string title,string text = "") {
         var toast = new ToastContentBuilder().AddArgument("id",id).AddText(title);
         if(text.Length > 0) toast.AddText(text);

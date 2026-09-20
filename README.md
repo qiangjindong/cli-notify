@@ -41,6 +41,38 @@ Codex 已完成
 
 看到“安装完成”后，关闭当前 Codex，再重新运行 `codex`。以后仍然照常使用 Codex，不需要改命令。
 
+## 通知图标
+
+默认使用 `assets/codex-win-notify.png`。如需替换，编辑仓库根目录的 `codex-win-notify.json`：
+
+```json
+{
+  "notification": {
+    "icon": "/你的/图标路径/icon.png"
+  }
+}
+```
+
+支持 PNG；相对路径以仓库根目录为基准。安装器会将图片转换并嵌入通知程序，使其显示在通知标题栏的应用图标位置，不会占用正文。设为 `null` 可恢复 Windows 默认应用图标。修改后重新运行 `./install.sh`（Windows 原生安装则运行 `.\install.ps1`）即可生效。
+
+## 测试通知
+
+无需启动 Codex 或调用模型即可发送测试通知：
+
+Windows：
+
+```powershell
+.\test.ps1
+```
+
+WSL：
+
+```sh
+./test.sh
+```
+
+测试通知会在当前终端位于前台时照常显示。点击通知应返回当前 Windows Terminal，用于验证通知发送和窗口关联；该命令不消耗 Codex 模型额度。
+
 如果安装失败，安装器会说明缺少什么。最常见的问题是 Windows 没有安装 [.NET 9 SDK](https://dotnet.microsoft.com/download/dotnet/9.0)。
 
 ## 卸载
