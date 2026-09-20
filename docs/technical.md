@@ -8,7 +8,7 @@
 
 新增 `install.ps1` / `uninstall.ps1` 和 C# `--hook` / `--hook-worker`。安装需要 Windows Codex、Windows Terminal、.NET 9 SDK 和 NuGet 网络；运行不依赖 Windows Python。默认配置位置为 `%USERPROFILE%\.codex`，支持 `CODEX_HOME` 或 `-CodexHome`。切换 Home 前应先卸载旧 Windows client。
 
-`--hook` 从 stdin 读取 JSON，Stop 先输出 `{}`，再保留 session/turn/tool 标识和目录名，计算摘要并捕获 HWND/PID/启动时间。脱敏结果通过 stdin 发给无窗口 worker，不把问答和命令放入进程参数。worker 用 `Microsoft.Data.Sqlite` 只读查询来源，只有 `thread_source=user` 才发送四类提醒；缺失、内部线程、结构不兼容均抑制。SessionStart 只登记窗口。每次提醒重新登记，登记失败不使用旧窗口。原有 Named Pipe、Toast、去重和点击恢复共用。
+`--hook` 从 stdin 读取 JSON，Stop 先输出 `{}`，再保留 session/turn/tool 标识和目录名，计算摘要并捕获 HWND/PID/启动时间。脱敏结果通过 stdin 发给无窗口 worker，不把问答和命令放入进程参数。worker 用 `Microsoft.Data.Sqlite` 只读查询 `thread_source` 和 `name`，只有 `thread_source=user` 才发送四类提醒；缺失、内部线程、结构不兼容均抑制。SessionStart 只登记窗口。每次提醒重新登记，登记失败不使用旧窗口。原有 Named Pipe、Toast、去重和点击恢复共用。
 
 Windows hook 配置使用官方支持的 `command_windows`，POSIX fallback 为 `:`。实测 `cmd /C` 引号边界会破坏带空格的 exe 命令，因此使用系统 Windows PowerShell 的 `-EncodedCommand` 做纯 stdin/stdout 转接，hook 业务仍在 C# 中。编码命令不含用户问答，路径按 PowerShell 字符串转义；无需 8.3 短路径。系统目录本身包含空白或 shell 扩展字符时拒绝安装。此方案增加一次 PowerShell 启动开销；不是 `codex` 的 PATH shim。
 
@@ -29,7 +29,7 @@ python tests/windows_desktop.py
 
 本轮验收：
 
-- Release 编译零警告/错误；17 项 C# 检查通过，覆盖脱敏、事件去重、参数化只读来源过滤、配置保留、重装和非法配置拒绝。
+- Release 编译零警告/错误；21 项 C# 检查通过，覆盖脱敏、事件去重、参数化只读来源与线程名查询、空名回退、通知状态文本、配置保留、重装和非法配置拒绝。
 - Windows Python 测试 23 项通过，2 项 POSIX 路径/信任专属检查跳过；真实 Codex 0.155.1 `hooks/list` 确认五类 hook 可信，原有 hook 未被自动信任。
 - 含中文、空格和 `&` 的安装路径通过实际 `cmd /C` 执行 Stop，正确返回 `{}`。安装器用隔离的临时 Codex Home 实测重装幂等、卸载配置清除、旧 WSL 助手保留；未修改用户默认 Windows Codex 配置。
 - 两个真实 Windows Terminal 原生窗口分别通过合成 SessionStart 登记不同 HWND。
@@ -50,9 +50,9 @@ codex --model gpt-5.5
 codex resume --last
 ```
 
-在当前终端直接运行 Codex，不新建窗口，也不修改标题。完成、调用 `request_user_input`、触发权限审批或完成上下文压缩时，只有该窗口不在前台才发送通知。审批提醒标题为“Codex 等待命令审批”。点击通知恢复并聚焦窗口；窗口关闭后提示“目标终端已关闭”。前台激活被 Windows 拒绝时，闪烁任务栏。
+在当前终端直接运行 Codex，不新建窗口，也不修改标题。完成、调用 `request_user_input`、触发权限审批或完成上下文压缩时，只有该窗口不在前台才发送通知。Toast 第一行是 `threads.name`（空值回退到当前工作目录名），第二行是事件状态，例如“Codex 已完成”或“Codex 等待命令审批”。点击通知恢复并聚焦窗口；窗口关闭后仍使用独立标题“目标终端已关闭”。前台激活被 Windows 拒绝时，闪烁任务栏。
 
-参数、当前目录和环境直接沿用当前进程。发送事件只包含窗口关联、类型、目录名称及标识摘要。
+参数、当前目录和环境直接沿用当前进程。发送事件只包含窗口关联、类型、目录名称、线程名称及标识摘要。
 
 不定位标签页或分屏。审批提醒不代替审批，仍需回到终端选择允许或拒绝。当前仅支持每个窗口一个标签页、无分屏。
 
@@ -77,7 +77,7 @@ hook 立即分离通知工作进程，不等待点击、回答或审批；`Stop`
 
 登记时通过关联控制台的 `GetConsoleWindow` 与 `GetAncestor(GA_ROOTOWNER)` 获取终端窗口；无法取得时不猜测前台窗口，记录失败并继续 Codex。助手保存 HWND、PID 和进程启动时间，点击时重新校验，不依赖标题。通知按会话替换，事件摘要去重并持久化。已关闭的窗口不会重新创建，也不会恢复旧会话。
 
-完成、提问、审批和压缩通知读取 Codex 0.155.0 的 `state_5.sqlite` 中该线程的 `thread_source`，仅接受已持久登记的 `user` 会话，排除自动评审的临时线程和子代理。来源缺失或数据库不可读时，本工具抑制对应通知并记录原因，原有 notify 保持不变。此判断依赖当前 Codex 状态库结构，升级后需验证。桥接日志记录 thread/turn 标识，不记录问答内容。
+完成、提问、审批和压缩通知同时读取 Codex 0.155.0 的 `state_5.sqlite` 中该线程的 `thread_source` 和 `name`，仅接受已持久登记的 `user` 会话，排除自动评审的临时线程和子代理。来源缺失或数据库不可读时，本工具抑制对应通知并记录原因，原有 notify 保持不变。此判断依赖当前 Codex 状态库结构，升级后需验证。线程名称只进入通知载荷；桥接和助手日志仍只记录必要标识与结果，不记录线程名称、问答、命令或完成文本。
 
 审批 hook 由 Codex 在审批流程开始时触发；接口不提供“最终是否等待人工选择”的信号。其他 hooks 或自动审批随后直接作出决定时，仍可能收到审批提醒。后台发送有短暂延迟，审批很快结束时也可能收到稍晚的提醒。手动或自动压缩完成后显示“Codex 上下文已压缩”。新增审批和压缩 hook 需要重新启动 `codex` 会话才会加载。
 
@@ -86,7 +86,7 @@ hook 立即分离通知工作进程，不等待点击、回答或审批；`Stop`
 - Windows：`%LOCALAPPDATA%\CodexWinNotify\helper.log`
 - WSL：`${XDG_STATE_HOME:-~/.local/state}/codex-win-notify/bridge.log`
 
-日志不记录完整提问、回答或 Codex 完成文本。
+日志不记录线程名称、完整提问、回答、命令或 Codex 完成文本。
 
 ## 验证
 

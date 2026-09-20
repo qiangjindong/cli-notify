@@ -22,6 +22,7 @@ class BridgeTests(unittest.TestCase):
             bridge.send('question',payload)
             event=json.loads(run.call_args.kwargs['input'])
             self.assertEqual(event['Cwd'],'中文 空格')
+            self.assertEqual(event['ThreadName'],'')
             self.assertNotIn('PRIVATE',run.call_args.kwargs['input'])
     def test_failure_does_not_raise(self):
         with patch.dict(os.environ,{'CWN_ID':'a'*32,'CWN_HELPER':'missing'}),patch('bridge.subprocess.run',side_effect=OSError),patch('bridge.log') as log:
@@ -54,11 +55,13 @@ class BridgeTests(unittest.TestCase):
             self.assertLess(time.monotonic()-start,1)
 
     def test_approval_worker_filters_internal_threads(self):
-        for user in (False,True):
-            with self.subTest(user=user),patch.object(sys,'argv',['bridge.py','approval-worker',json.dumps({'session_id':'thread','turn_id':'turn','request_id':'request'})]),patch('bridge.user_completion',return_value=user),patch('bridge.send') as send,patch('bridge.log'):
+        for thread_name in (None,'审批线程'):
+            with self.subTest(thread_name=thread_name),patch.object(sys,'argv',['bridge.py','approval-worker',json.dumps({'session_id':'thread','turn_id':'turn','request_id':'request'})]),patch('bridge.user_thread_name',return_value=thread_name),patch('bridge.send') as send,patch('bridge.log'):
                 bridge.main()
-                self.assertEqual(send.called,user)
-                if user:self.assertEqual(send.call_args.args[0],'approval')
+                self.assertEqual(send.called,thread_name is not None)
+                if thread_name is not None:
+                    self.assertEqual(send.call_args.args[0],'approval')
+                    self.assertEqual(send.call_args.args[1]['thread_name'],thread_name)
 
     def test_approval_events_are_private_and_distinct_per_request(self):
         with patch.dict(os.environ,{'CWN_ID':'a'*32,'CWN_HELPER':'helper'}),patch('bridge.subprocess.run') as run,patch('bridge.log'):
@@ -78,11 +81,22 @@ class BridgeTests(unittest.TestCase):
             self.assertEqual(calls[0].args[0][-2],'compact-worker')
             self.assertNotIn('PRIVATE',calls[0].args[0][-1])
             self.assertNotEqual(json.loads(calls[0].args[0][-1])['request_id'],json.loads(calls[1].args[0][-1])['request_id'])
-        for user in (False,True):
-            with self.subTest(user=user),patch.object(sys,'argv',['bridge.py','compact-worker',calls[0].args[0][-1]]),patch('bridge.user_completion',return_value=user),patch('bridge.send') as send,patch('bridge.log'):
+        for thread_name in (None,''):
+            with self.subTest(thread_name=thread_name),patch.object(sys,'argv',['bridge.py','compact-worker',calls[0].args[0][-1]]),patch('bridge.user_thread_name',return_value=thread_name),patch('bridge.send') as send,patch('bridge.log'):
                 bridge.main()
-                self.assertEqual(send.called,user)
-                if user:self.assertEqual(send.call_args.args[0],'compact')
+                self.assertEqual(send.called,thread_name is not None)
+                if thread_name is not None:
+                    self.assertEqual(send.call_args.args[0],'compact')
+                    self.assertEqual(send.call_args.args[1]['thread_name'],'')
+
+    def test_question_worker_filters_origin_and_adds_thread_name(self):
+        payload={'session_id':'thread','tool_use_id':'tool'}
+        for thread_name in (None,'等待回答'):
+            with self.subTest(thread_name=thread_name),patch.object(sys,'argv',['bridge.py','question-worker',json.dumps(payload)]),patch('bridge.user_thread_name',return_value=thread_name),patch('bridge.send') as send,patch('bridge.log'):
+                bridge.main()
+                self.assertEqual(send.called,thread_name is not None)
+                if thread_name is not None:
+                    self.assertEqual(send.call_args.args[1]['thread_name'],thread_name)
 
     def test_original_notify_receives_exact_payload(self):
         raw=json.dumps({'type':'agent-turn-complete','last-assistant-message':'中文\nquote"'},ensure_ascii=False)
@@ -92,9 +106,9 @@ class BridgeTests(unittest.TestCase):
     def test_internal_completion_before_user_completion(self):
         with tempfile.TemporaryDirectory() as temp:
             with closing(sqlite3.connect(str(Path(temp)/'state_5.sqlite'))) as db, db:
-                db.execute('CREATE TABLE threads (id TEXT, source TEXT, thread_source TEXT)')
-                db.executemany('INSERT INTO threads VALUES (?, ?, ?)',[
-                    ('main', 'cli', 'user'), ('child', '{"subagent":"review"}', 'subagent')])
+                db.execute('CREATE TABLE threads (id TEXT, source TEXT, thread_source TEXT, name TEXT)')
+                db.executemany('INSERT INTO threads VALUES (?, ?, ?, ?)',[
+                    ('main', 'cli', 'user', '补充 PDF 预览并验收'), ('child', '{"subagent":"review"}', 'subagent', '内部评审')])
             with patch.dict(os.environ,{'CODEX_HOME':temp,'CWN_ORIGINAL_NOTIFY':'["original"]'}),patch('bridge.send') as send,patch('bridge.log') as log,patch('bridge.subprocess.Popen') as original:
                 for thread in ('ephemeral-review', 'child', 'main'):
                     payload={'type':'agent-turn-complete','thread-id':thread,'turn-id':'turn','last-assistant-message':'PRIVATE'}
@@ -103,28 +117,42 @@ class BridgeTests(unittest.TestCase):
                     self.assertEqual(original.call_args.args[0],['original',raw])
                 self.assertEqual(send.call_count,1)
                 self.assertEqual(send.call_args.args[1]['thread-id'],'main')
+                self.assertEqual(send.call_args.args[1]['thread_name'],'补充 PDF 预览并验收')
                 self.assertEqual(log.call_count,2)
+
+    def test_user_thread_name_and_empty_name_fallback_value(self):
+        with tempfile.TemporaryDirectory() as temp:
+            with closing(sqlite3.connect(str(Path(temp)/'state_5.sqlite'))) as db, db:
+                db.execute('CREATE TABLE threads (id TEXT, thread_source TEXT, name TEXT)')
+                db.executemany('INSERT INTO threads VALUES (?, ?, ?)',[
+                    ('named','user','线程名'),('empty','user',''),('null','user',None),('internal','subagent','内部')])
+            with patch.dict(os.environ,{'CODEX_HOME':temp}):
+                self.assertEqual(bridge.user_thread_name({'session_id':'named'}),'线程名')
+                self.assertEqual(bridge.user_thread_name({'thread-id':'empty'}),'')
+                self.assertEqual(bridge.user_thread_name({'thread-id':'null'}),'')
+                self.assertIsNone(bridge.user_thread_name({'thread-id':'internal'}))
+                self.assertIsNone(bridge.user_thread_name({'thread-id':'missing'}))
 
     def test_missing_or_incompatible_origin_database_suppresses_toast(self):
         with tempfile.TemporaryDirectory() as temp,patch.dict(os.environ,{'CODEX_HOME':temp}),patch('bridge.log'):
             payload={'thread-id':'main'}
-            self.assertFalse(bridge.user_completion(payload))
+            self.assertIsNone(bridge.user_thread_name(payload))
             self.assertFalse((Path(temp)/'state_5.sqlite').exists())
             with closing(sqlite3.connect(str(Path(temp)/'state_5.sqlite'))) as db, db:
                 db.execute('CREATE TABLE threads (id TEXT)')
-            self.assertFalse(bridge.user_completion(payload))
-            self.assertFalse(bridge.user_completion({}))
+            self.assertIsNone(bridge.user_thread_name(payload))
+            self.assertIsNone(bridge.user_thread_name({}))
 
     def test_origin_failure_still_chains_original_notify(self):
         raw=json.dumps({'type':'agent-turn-complete','thread-id':'main'})
-        with patch.dict(os.environ,{'CWN_ORIGINAL_NOTIFY':'["original"]'}),patch.object(sys,'argv',['bridge.py','complete',raw]),patch('bridge.user_completion',return_value=False),patch('bridge.send') as send,patch('bridge.log'),patch('bridge.subprocess.Popen') as original:
+        with patch.dict(os.environ,{'CWN_ORIGINAL_NOTIFY':'["original"]'}),patch.object(sys,'argv',['bridge.py','complete',raw]),patch('bridge.user_thread_name',return_value=None),patch('bridge.send') as send,patch('bridge.log'),patch('bridge.subprocess.Popen') as original:
             bridge.main()
             send.assert_not_called()
             self.assertEqual(original.call_args.args[0],['original',raw])
 
     def test_log_records_identity_without_conversation(self):
         with tempfile.TemporaryDirectory() as temp,patch.dict(os.environ,{'XDG_STATE_HOME':temp}):
-            bridge.log('complete','internal-or-unknown-suppressed',{'thread-id':'thread','turn-id':'turn','last-assistant-message':'PRIVATE'})
+            bridge.log('complete','internal-or-unknown-suppressed',{'thread-id':'thread','turn-id':'turn','thread_name':'PRIVATE THREAD NAME','last-assistant-message':'PRIVATE'})
             text=(Path(temp)/'codex-win-notify/bridge.log').read_text()
             self.assertNotIn('PRIVATE',text)
             self.assertEqual(json.loads(text)['thread-id'],'thread')

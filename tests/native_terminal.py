@@ -34,8 +34,8 @@ try:
     thread=uuid.uuid4().hex
     os.environ['CODEX_HOME']=str(folder)
     with sqlite3.connect(folder/'state_5.sqlite') as db:
-        db.execute('CREATE TABLE threads (id TEXT, thread_source TEXT)')
-        db.execute('INSERT INTO threads VALUES (?, ?)',(thread,'user'))
+        db.execute('CREATE TABLE threads (id TEXT, thread_source TEXT, name TEXT)')
+        db.execute('INSERT INTO threads VALUES (?, ?, ?)',(thread,'user','WSL 原生测试线程'))
     ident=hashlib.sha256(thread.encode()).hexdigest()[:32]
     install=json.loads((root/'installation.json').read_text())
     # Skip SessionStart to test lazy registration on the first notification.

@@ -5,7 +5,7 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.Toolkit.Uwp.Notifications;
 
-record Event(string Id, string Kind, string Cwd = "", string Key = "", long Hwnd = 0, int Pid = 0, long Started = 0);
+record Event(string Id, string Kind, string Cwd = "", string Key = "", string ThreadName = "", long Hwnd = 0, int Pid = 0, long Started = 0);
 record Window(long Hwnd, int Pid, long Started, string Cwd);
 static class Program {
     static readonly string Root = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "CodexWinNotify");
@@ -103,11 +103,17 @@ static class Program {
             if(Seen.Count>10000) { Seen.Clear(); if(e.Key.Length>0) Seen.Add(e.Id+":"+e.Kind+":"+e.Key); }
             var seenFile=Path.Combine(Root,"events.json"); File.WriteAllText(seenFile+".tmp",JsonSerializer.Serialize(Seen)); File.Move(seenFile+".tmp",seenFile,true);
             if(GetForegroundWindow()==(nint)w.Hwnd) { Log(e.Id,e.Kind,"foreground-suppressed"); return; }
-            Toast(e.Id,e.Kind switch { "complete" => "Codex 已完成", "approval" => "Codex 等待命令审批", "compact" => "Codex 上下文已压缩", _ => "Codex 需要回答" },w.Cwd);
+            Toast(e.Id,NotificationTitle(e,w),NotificationStatus(e.Kind));
             Log(e.Id,e.Kind,"notified");
         }
     }
-    static void Toast(string id,string text,string cwd) => new ToastContentBuilder().AddArgument("id",id).AddText(text).AddText(cwd).Show(t=> { t.Tag=id[..16]; t.Group="Codex"; });
+    internal static string NotificationTitle(Event e, Window w) => string.IsNullOrWhiteSpace(e.ThreadName) ? w.Cwd : e.ThreadName;
+    internal static string NotificationStatus(string kind) => kind switch { "complete" => "Codex 已完成", "approval" => "Codex 等待命令审批", "compact" => "Codex 上下文已压缩", _ => "Codex 需要回答" };
+    static void Toast(string id,string title,string text = "") {
+        var toast = new ToastContentBuilder().AddArgument("id",id).AddText(title);
+        if(text.Length > 0) toast.AddText(text);
+        toast.Show(t=> { t.Tag=id[..16]; t.Group="Codex"; });
+    }
     static bool Valid(Window w) {
         try { GetWindowThreadProcessId((nint)w.Hwnd,out uint pid); return IsWindow((nint)w.Hwnd) && pid==w.Pid && Process.GetProcessById(w.Pid).StartTime.ToUniversalTime().Ticks==w.Started; }
         catch { return false; }

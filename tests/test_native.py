@@ -14,7 +14,7 @@ from rpc import Client
 class NativeTests(unittest.TestCase):
     def test_failed_registration_does_not_use_stale_window(self):
         payload={'session_id':'main','turn_id':'turn','cwd':'/tmp/native'}
-        with patch('pathlib.Path.read_text',return_value='{"helper":"test-helper"}'),patch.object(sys,'argv',['bridge.py','native-worker','complete',json.dumps(payload)]),patch('bridge.user_completion',return_value=True),patch('bridge.send',return_value=False) as send,patch('bridge.log'),patch.dict(os.environ,{}):
+        with patch('pathlib.Path.read_text',return_value='{"helper":"test-helper"}'),patch.object(sys,'argv',['bridge.py','native-worker','complete',json.dumps(payload)]),patch('bridge.user_thread_name',return_value='原生线程'),patch('bridge.send',return_value=False) as send,patch('bridge.log'),patch.dict(os.environ,{}):
             bridge.main()
             send.assert_called_once_with('register',payload)
 
@@ -54,9 +54,9 @@ class NativeTests(unittest.TestCase):
 
     def test_native_worker_ignores_inherited_window_and_notify(self):
         payload={'session_id':'main','turn_id':'turn','cwd':'/tmp/native'}
-        with patch('pathlib.Path.read_text',return_value='{"helper":"test-helper"}'),patch.dict(os.environ,{'CWN_ID':'old-window','CWN_CWD':'/old'}),patch.object(sys,'argv',['bridge.py','native-worker','complete',json.dumps(payload)]),patch('bridge.user_completion',return_value=True),patch('bridge.send') as send:
+        with patch('pathlib.Path.read_text',return_value='{"helper":"test-helper"}'),patch.dict(os.environ,{'CWN_ID':'old-window','CWN_CWD':'/old'}),patch.object(sys,'argv',['bridge.py','native-worker','complete',json.dumps(payload)]),patch('bridge.user_thread_name',return_value='原生线程'),patch('bridge.send') as send:
             bridge.main()
             self.assertNotEqual(os.environ['CWN_ID'],'old-window')
             self.assertEqual(os.environ['CWN_CWD'],'/tmp/native')
             self.assertEqual(send.call_args_list[0].args,('register',payload))
-            self.assertEqual(send.call_args_list[1].args,('complete',{'thread-id':'main','turn-id':'turn'}))
+            self.assertEqual(send.call_args_list[1].args,('complete',{'thread-id':'main','turn-id':'turn','thread_name':'原生线程'}))

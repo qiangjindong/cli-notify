@@ -81,8 +81,8 @@ def main():
                 folder = home/str(i); folder.mkdir(); folders.append(folder)
                 session = uuid.uuid4().hex; ident = hashlib.sha256(session.encode()).hexdigest()[:32]; ids.append(ident)
                 with closing(sqlite3.connect(home/'state_5.sqlite')) as db:
-                    db.execute('CREATE TABLE IF NOT EXISTS threads (id TEXT, thread_source TEXT)')
-                    db.execute('INSERT INTO threads VALUES (?, ?)', (session, 'user'))
+                    db.execute('CREATE TABLE IF NOT EXISTS threads (id TEXT, thread_source TEXT, name TEXT)')
+                    db.execute('INSERT INTO threads VALUES (?, ?, ?)', (session, 'user', f'原生测试线程 {i+1}'))
                     db.commit()
                 (folder/'request.json').write_text(json.dumps({'home':str(home),'session':session,'command':command,'helper':str(helper),'direct':'--direct' in sys.argv}), encoding='utf-8')
                 subprocess.run(['wt.exe','-w','CWN-'+uuid.uuid4().hex,'new-tab',sys.executable,str(Path(__file__).resolve()),'--worker',str(folder)], check=True)

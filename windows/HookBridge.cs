@@ -55,24 +55,30 @@ static class HookBridge {
         } catch(Exception ex) { Program.Log("", "hook", ex.GetType().Name); }
     }
 
-    internal static bool IsUser(string home, string session) {
+    internal static string? UserThreadName(string home, string session) {
         try {
             using var db = new SqliteConnection(new SqliteConnectionStringBuilder {
                 DataSource = Path.Combine(home, "state_5.sqlite"), Mode = SqliteOpenMode.ReadOnly, Pooling = false, DefaultTimeout = 1
             }.ToString());
             db.Open();
             using var query = db.CreateCommand();
-            query.CommandText = "SELECT thread_source FROM threads WHERE id = $id";
+            query.CommandText = "SELECT thread_source, name FROM threads WHERE id = $id";
             query.Parameters.AddWithValue("$id", session);
-            return query.ExecuteScalar() is string source && source == "user";
-        } catch(Exception ex) { Program.Log("", "hook-origin", ex.GetType().Name); return false; }
+            using var row = query.ExecuteReader();
+            if(!row.Read() || row.GetString(0) != "user") return null;
+            return row.IsDBNull(1) ? "" : row.GetString(1);
+        } catch(Exception ex) { Program.Log("", "hook-origin", ex.GetType().Name); return null; }
     }
 
     internal static void Dispatch() {
         Console.InputEncoding = new UTF8Encoding(false);
         var work = JsonSerializer.Deserialize<HookWork>(Console.In.ReadToEnd())!;
-        if(work.Kind != "register" && !IsUser(work.Home, work.Session)) {
-            Program.Log(work.Event.Id, work.Kind, "internal-or-unknown-suppressed"); return;
+        if(work.Kind != "register") {
+            var threadName = UserThreadName(work.Home, work.Session);
+            if(threadName is null) {
+                Program.Log(work.Event.Id, work.Kind, "internal-or-unknown-suppressed"); return;
+            }
+            work = work with { Event = work.Event with { ThreadName = threadName } };
         }
         // Re-register every event; failed capture/registration must never use stale state.
         Program.Send(work.Event with { Kind = "register" });
