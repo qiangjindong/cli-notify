@@ -81,4 +81,7 @@ class ClientTests(unittest.TestCase):
             (root/'clients/windows.json').write_text('{}')
             self.assertFalse(release(root, second))
             (root/'clients/windows.json').unlink()
+            (root/'clients/pi-windows.json').write_text('{}')
+            self.assertFalse(release(root, second))
+            (root/'clients/pi-windows.json').unlink()
             self.assertTrue(release(root, second))

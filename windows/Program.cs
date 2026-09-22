@@ -5,7 +5,7 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.Toolkit.Uwp.Notifications;
 
-record Event(string Id, string Kind, string Cwd = "", string Key = "", string ThreadName = "", long Hwnd = 0, int Pid = 0, long Started = 0);
+record Event(string Id, string Kind, string Cwd = "", string Key = "", string ThreadName = "", long Hwnd = 0, int Pid = 0, long Started = 0, string Client = "Codex");
 record Window(long Hwnd, int Pid, long Started, string Cwd);
 static class Program {
     static readonly string Root = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "CodexWinNotify");
@@ -20,6 +20,7 @@ static class Program {
     [STAThread] static void Main(string[] args) {
         try {
             Directory.CreateDirectory(Root);
+            if(args.Contains("--pi-send")) { PiBridge.Run(); return; }
             if(args.Contains("--hook")) { HookBridge.Run(); return; }
             if(args.Contains("--hook-worker")) { HookBridge.Dispatch(); return; }
             if(args.Length == 3 && args[0] == "--configure") { HookConfig.Update(args[1], args[2]); return; }
@@ -108,22 +109,27 @@ static class Program {
             }
             if(e.Kind=="forget") { ToastNotificationManagerCompat.History.Remove(e.Id[..16],"Codex"); Windows.Remove(e.Id); File.WriteAllText(Path.Combine(Root,"windows.json"),JsonSerializer.Serialize(Windows)); return; }
             if(e.Kind=="focus") { Focus(e.Id); return; }
-            if(e.Kind!="complete" && e.Kind!="question" && e.Kind!="approval" && e.Kind!="compact" && e.Kind!="test") return;
+            if(e.Kind!="complete" && e.Kind!="question" && e.Kind!="approval" && e.Kind!="compact" && e.Kind!="test" && e.Kind!="error") return;
             if(!Windows.TryGetValue(e.Id,out var w) || !Valid(w)) { Log(e.Id,e.Kind,"invalid-window"); return; }
             if(e.Kind=="test") {
-                Toast(e.Id,NotificationTitle(e,w),NotificationStatus(e.Kind));
+                Toast(e.Id,NotificationTitle(e,w),NotificationStatus(e.Kind,e.Client));
                 Log(e.Id,e.Kind,"notified"); return;
             }
             if(e.Key.Length>0 && !Seen.Add(e.Id+":"+e.Kind+":"+e.Key)) { Log(e.Id,e.Kind,"duplicate"); return; }
             if(Seen.Count>10000) { Seen.Clear(); if(e.Key.Length>0) Seen.Add(e.Id+":"+e.Kind+":"+e.Key); }
             var seenFile=Path.Combine(Root,"events.json"); File.WriteAllText(seenFile+".tmp",JsonSerializer.Serialize(Seen)); File.Move(seenFile+".tmp",seenFile,true);
             if(GetForegroundWindow()==(nint)w.Hwnd) { Log(e.Id,e.Kind,"foreground-suppressed"); return; }
-            Toast(e.Id,NotificationTitle(e,w),NotificationStatus(e.Kind));
+            Toast(e.Id,NotificationTitle(e,w),NotificationStatus(e.Kind,e.Client));
             Log(e.Id,e.Kind,"notified");
         }
     }
     internal static string NotificationTitle(Event e, Window w) => string.IsNullOrWhiteSpace(e.ThreadName) ? w.Cwd : e.ThreadName;
-    internal static string NotificationStatus(string kind) => kind switch { "complete" => "Codex 已完成", "approval" => "Codex 等待命令审批", "compact" => "Codex 上下文已压缩", "test" => "通知正常，点击可返回此终端", _ => "Codex 需要回答" };
+    internal static string NotificationStatus(string kind, string client = "Codex") {
+        var app = client == "Pi" ? "Pi" : "Codex";
+        return kind switch { "complete" => $"{app} 已完成", "approval" => $"{app} 等待命令审批",
+            "compact" => $"{app} 上下文已压缩", "error" => $"{app} 运行出错",
+            "test" => $"{app} 通知正常，点击可返回此终端", _ => $"{app} 需要回答" };
+    }
     static void Toast(string id,string title,string text = "") {
         var toast = new ToastContentBuilder().AddArgument("id",id).AddText(title);
         if(text.Length > 0) toast.AddText(text);

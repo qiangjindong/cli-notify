@@ -27,6 +27,7 @@ static class Checks {
             Check(HookBridge.UserThreadName(home, "empty") == "", "empty user thread name");
             Check(HookBridge.UserThreadName(home, "internal") is null && HookBridge.UserThreadName(home, "missing") is null, "internal/unknown suppresses");
             Check(HookBridge.UserThreadName(home, "' OR 1=1 --") is null, "parameterized SQL");
+            Check(System.Reflection.CustomAttributeExtensions.GetCustomAttribute<System.Reflection.AssemblyTitleAttribute>(typeof(Program).Assembly)?.Title == "CLI Notify", "shared notification display name");
             var window = new Window(1, 1, 1, "project-folder");
             Check(Program.NotificationTitle(new Event("a", "complete", ThreadName:"补充 PDF 预览并验收"), window) == "补充 PDF 预览并验收", "thread name title");
             Check(Program.NotificationTitle(new Event("a", "complete"), window) == "project-folder", "cwd title fallback");
@@ -34,7 +35,33 @@ static class Checks {
                 && Program.NotificationStatus("question") == "Codex 需要回答"
                 && Program.NotificationStatus("approval") == "Codex 等待命令审批"
                 && Program.NotificationStatus("compact") == "Codex 上下文已压缩"
-                && Program.NotificationStatus("test") == "通知正常，点击可返回此终端", "status bodies");
+                && Program.NotificationStatus("test") == "Codex 通知正常，点击可返回此终端", "status bodies");
+            var piJson = """{"Id":"0123456789abcdef0123456789abcdef","Kind":"complete","Key":"abcdef0123456789abcdef0123456789","Cwd":"中文项目","ThreadName":"Pi 会话","Hwnd":123,"Pid":456,"Started":789,"Client":"Other","prompt":"PRIVATE"}""";
+            var piEvent = PiBridge.Parse(piJson);
+            Check(piEvent.Client == "Pi" && piEvent.Hwnd == 0 && piEvent.Pid == 0 && piEvent.Started == 0, "pi captures identity locally");
+            Check(piEvent.ThreadName == "Pi 会话" && piEvent.Cwd == "中文项目" && !JsonSerializer.Serialize(piEvent).Contains("PRIVATE"), "pi metadata only");
+            Check(Program.NotificationStatus("complete", "Pi") == "Pi 已完成"
+                && Program.NotificationStatus("question", "Pi") == "Pi 需要回答"
+                && Program.NotificationStatus("compact", "Pi") == "Pi 上下文已压缩"
+                && Program.NotificationStatus("error", "Pi") == "Pi 运行出错"
+                && Program.NotificationStatus("test", "Pi") == "Pi 通知正常，点击可返回此终端", "pi status bodies");
+            Check(JsonSerializer.Deserialize<Event>("""{"Id":"a","Kind":"complete"}""")!.Client == "Codex", "old clients default to Codex");
+            var piSent = new List<Event>();
+            PiBridge.Dispatch(piEvent, e => e with { Hwnd = 42, Pid = 43, Started = 44 }, piSent.Add);
+            Check(piSent.Count == 2 && piSent[0].Kind == "register" && piSent[1].Kind == "complete"
+                && piSent.All(e => e.Hwnd == 42 && e.Pid == 43 && e.Started == 44 && e.Client == "Pi"), "pi captures then registers then sends");
+            piSent.Clear();
+            PiBridge.Dispatch(piEvent with { Kind = "register" }, e => e, piSent.Add);
+            Check(piSent.Count == 1 && piSent[0].Kind == "register", "pi registration has no toast");
+            piSent.Clear();
+            try { PiBridge.Dispatch(piEvent, e => throw new IOException(), piSent.Add); } catch(IOException) { }
+            Check(piSent.Count == 0, "pi capture failure sends nothing");
+            try { PiBridge.Dispatch(piEvent, e => e, e => { piSent.Add(e); throw new IOException(); }); } catch(IOException) { }
+            Check(piSent.Count == 1 && piSent[0].Kind == "register", "pi registration failure prevents stale notification");
+            foreach(var invalid in new[] { "null", "{}", piJson.Replace("complete", "focus"), piJson.Replace("complete", "forget"), piJson.Replace("0123456789abcdef0123456789abcdef", "bad"), new string('x', 16385) }) {
+                bool failed = false; try { PiBridge.Parse(invalid); } catch { failed = true; }
+                Check(failed, "reject invalid pi event");
+            }
             var old = "# existing\nnotify=['keep']\n[[hooks.Stop]]\n[[hooks.Stop.hooks]]\ntype='command'\ncommand='keep'\n";
             var config = Path.Combine(home, "config.toml");
             var first = HookConfig.Install(old, config, @"C:\中文 空格 & test\CodexWinNotify.exe");

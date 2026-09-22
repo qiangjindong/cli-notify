@@ -1,9 +1,14 @@
-param([string]$CodexHome = $(if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $env:USERPROFILE '.codex' }))
+param(
+    [string]$CodexHome = $(if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $env:USERPROFILE '.codex' }),
+    [switch]$PiOnly
+)
 $ErrorActionPreference = 'Stop'
 . "$PSScriptRoot\windows\installation.ps1"
 
-$CodexHome = [IO.Path]::GetFullPath($CodexHome)
-Get-Command codex.exe -ErrorAction Stop | Out-Null
+if (-not $PiOnly) {
+    $CodexHome = [IO.Path]::GetFullPath($CodexHome)
+    Get-Command codex.exe -ErrorAction Stop | Out-Null
+}
 Get-Command wt.exe -ErrorAction Stop | Out-Null
 if (-not ((& dotnet --list-sdks) -match '^9\.')) { throw 'Windows .NET 9 SDK is required.' }
 $settingsPath = Join-Path $PSScriptRoot 'codex-win-notify.json'
@@ -25,8 +30,8 @@ $root = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'CodexW
 $lock = Enter-InstallLock $root
 try {
     $clients = Join-Path $root 'clients'
-    $manifest = Join-Path $clients 'windows.json'
-    if (Test-Path -LiteralPath $manifest) {
+    $manifest = Join-Path $clients $(if ($PiOnly) { 'pi-windows.json' } else { 'windows.json' })
+    if (-not $PiOnly -and (Test-Path -LiteralPath $manifest)) {
         $previous = Get-Content -Raw -LiteralPath $manifest | ConvertFrom-Json
         if ($previous.home -ne $CodexHome) { throw 'Uninstall the existing Windows client before changing CODEX_HOME.' }
     }
@@ -41,7 +46,7 @@ try {
     }
     & dotnet @publishArgs
     if ($LASTEXITCODE -ne 0) { throw 'Publish failed; configuration was not changed.' }
-    Invoke-Helper (Join-Path $stage 'CodexWinNotify.exe') @('--configure', 'check', $CodexHome)
+    if (-not $PiOnly) { Invoke-Helper (Join-Path $stage 'CodexWinNotify.exe') @('--configure', 'check', $CodexHome) }
     $app = Join-Path $root 'app'
     $helper = Join-Path $app 'CodexWinNotify.exe'
     Stop-InstalledHelper $helper
@@ -51,7 +56,12 @@ try {
     Remove-Item -LiteralPath (Join-Path $root 'notification-icon.png') -Force -ErrorAction SilentlyContinue
     # Keep a lease even if configuring fails, so another client cannot remove
     # files needed for a repair/retry of this installation.
-    @{ home = $CodexHome; helper = $helper } | ConvertTo-Json | Set-Content -LiteralPath $manifest -Encoding UTF8
-    Invoke-Helper $helper @('--configure', 'install', $CodexHome)
-    Write-Host 'Installed. Close Codex and run codex again. Native desktop acceptance is documented in docs/technical.md.'
+    if ($PiOnly) {
+        @{ source = $PSScriptRoot; helper = $helper } | ConvertTo-Json | Set-Content -LiteralPath $manifest -Encoding UTF8
+        Write-Host 'Pi helper installed (no Codex configuration changed). Next: pi install . ; then restart Pi.'
+    } else {
+        @{ home = $CodexHome; helper = $helper } | ConvertTo-Json | Set-Content -LiteralPath $manifest -Encoding UTF8
+        Invoke-Helper $helper @('--configure', 'install', $CodexHome)
+        Write-Host 'Installed. Close Codex and run codex again. Native desktop acceptance is documented in docs/technical.md.'
+    }
 } finally { $lock.Dispose() }

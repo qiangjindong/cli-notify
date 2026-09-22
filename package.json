@@ -1,0 +1,10 @@
+{
+  "name": "pi-codex-win-notify",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Pi notifications using the CodexWinNotify Windows Terminal window bridge",
+  "type": "module",
+  "keywords": ["pi-package"],
+  "pi": { "extensions": ["./pi/cli-notify.js"] },
+  "scripts": { "test": "node --test tests/pi/*.test.mjs" }
+}

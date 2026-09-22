@@ -41,6 +41,21 @@ Codex 已完成
 
 看到“安装完成”后，关闭当前 Codex，再重新运行 `codex`。以后仍然照常使用 Codex，不需要改命令。
 
+## Pi coding agent
+
+新增 Pi extension，复用 Windows 通知与窗口关联后端，支持后台完成、等待输入、压缩和错误提醒，点击通知尝试回到原终端窗口。
+
+目前支持 **Windows 原生 Pi + Windows Terminal**（每窗口单标签页、无分屏），无需安装 Codex。在 PowerShell 中进入本仓库：
+
+```powershell
+.\install-pi.ps1
+pi install .
+```
+
+重启 Pi 或 `/reload`，运行 `/cli-notify-test` 发送不消耗模型额度的测试通知。Pi 不读取 Codex 数据库，也不修改 Codex 配置。
+
+安装、卸载、限制及桌面验收见 [Pi 扩展说明](docs/pi.md)。真实 Pi 窗口捕获与系统通知点击仍需按该文档验收。
+
 ## 通知图标
 
 默认使用 `assets/codex-win-notify.png`。如需替换，编辑仓库根目录的 `codex-win-notify.json`：
