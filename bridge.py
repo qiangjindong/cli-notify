@@ -2,12 +2,14 @@
 """Fail-open Codex event bridge. Never logs conversation content."""
 import hashlib
 from contextlib import closing
+from enum import Enum, auto
 import json
 import os
 from pathlib import Path
 import sqlite3
 import subprocess
 import sys
+import time
 import uuid
 
 ROOT = Path(__file__).resolve().parent
@@ -46,6 +48,82 @@ def user_thread_name(payload):
         log('completion-origin', type(exc).__name__, payload)
         return None
 
+class CompletionState(Enum):
+    READY = auto()
+    STOP = auto()
+    RETRY = auto()
+
+
+def goal_state(payload):
+    """A completed turn may be an intermediate turn of an unfinished goal."""
+    home = Path(os.environ.get('CODEX_HOME', str(Path.home()/'.codex')))
+    path = home/'goals_1.sqlite'
+    if not path.exists(): return CompletionState.READY  # Older Codex versions have no goals DB.
+    thread = payload.get('thread-id', payload.get('session_id'))
+    try:
+        with closing(sqlite3.connect(path.resolve().as_uri()+'?mode=ro', uri=True, timeout=.25)) as db:
+            row = db.execute('SELECT status FROM thread_goals WHERE thread_id = ?', (thread,)).fetchone()
+        return CompletionState.READY if row is None or row[0] == 'complete' else CompletionState.STOP
+    except (OSError, sqlite3.Error) as exc:
+        log('completion-goal', type(exc).__name__, payload)
+        return CompletionState.RETRY
+
+def turn_state(payload):
+    thread = payload.get('thread-id', payload.get('session_id'))
+    turn = payload.get('turn-id', payload.get('turn_id'))
+    if not isinstance(turn, str) or not turn: return CompletionState.STOP
+    home = Path(os.environ.get('CODEX_HOME', str(Path.home()/'.codex')))
+    try:
+        with closing(sqlite3.connect((home/'state_5.sqlite').resolve().as_uri()+'?mode=ro', uri=True, timeout=.25)) as db:
+            row = db.execute('SELECT rollout_path FROM threads WHERE id = ?', (thread,)).fetchone()
+        if not row: return CompletionState.RETRY
+        with Path(row[0]).open('rb') as file:
+            start = max(0, file.seek(0, 2) - 262144)
+            file.seek(start)
+            if start: file.readline()
+            lines = file.read().splitlines()
+        state = CompletionState.RETRY
+        seen_turn = False
+        for line in lines:
+            event = json.loads(line)
+            if event.get('type') != 'event_msg': continue
+            data = event.get('payload', {})
+            kind = data.get('type')
+            if kind not in ('task_started', 'task_complete', 'turn_aborted'): continue
+            event_turn = data.get('turn_id')
+            if not isinstance(event_turn, str) or not event_turn:
+                state = CompletionState.RETRY
+                continue
+            if event_turn != turn:
+                if seen_turn: return CompletionState.STOP
+                continue  # An older turn alone cannot prove continuation.
+            seen_turn = True
+            if kind == 'turn_aborted' or (kind == 'task_started' and state == CompletionState.READY):
+                return CompletionState.STOP
+            state = CompletionState.READY if kind == 'task_complete' else CompletionState.RETRY
+        return state
+    except (OSError, sqlite3.Error, ValueError, TypeError, AttributeError) as exc:
+        log('completion-settled', type(exc).__name__, payload)
+        return CompletionState.RETRY
+
+def completion_state(payload):
+    goal = goal_state(payload)
+    if goal == CompletionState.STOP: return CompletionState.STOP
+    turn = turn_state(payload)
+    if turn == CompletionState.STOP: return CompletionState.STOP
+    if goal == turn == CompletionState.READY: return CompletionState.READY
+    return CompletionState.RETRY
+
+def completion_ready(payload):
+    # Sleep only in the worker/legacy notify path, never in the native hook.
+    # Three attempts, not three consecutive successes; I/O adds to this delay.
+    for _ in range(3):
+        time.sleep(1)
+        state = completion_state(payload)
+        if state == CompletionState.READY: return True
+        if state == CompletionState.STOP: return False
+    return False
+
 def send(kind, payload=None):
     payload = payload or {}
     identifiers = [payload.get(k) for k in ('session_id','thread-id','turn-id','tool_use_id','tool_call_id')]
@@ -80,6 +158,9 @@ def main():
         install=json.loads((ROOT/'installation.json').read_text())
         os.environ.update(CWN_ID=hashlib.sha256(payload['session_id'].encode()).hexdigest()[:32],CWN_HELPER=install['helper'],CWN_CWD=payload.get('cwd') or os.getcwd())
         thread_name = '' if event_kind=='register' else user_thread_name(payload)
+        if event_kind=='complete' and not completion_ready(payload):
+            log(event_kind,'not-settled-or-goal-incomplete-suppressed',payload)
+            return
         if event_kind=='register' or thread_name is not None:
             if event_kind!='register' and not send('register',payload):
                 log(event_kind,'registration-failed',payload)
@@ -130,8 +211,10 @@ def main():
             if payload.get('type')=='agent-turn-complete':
                 thread_name=user_thread_name(payload)
                 if thread_name is not None:
-                    payload['thread_name']=thread_name
-                    send('complete',payload)
+                    if completion_ready(payload):
+                        payload['thread_name']=thread_name
+                        send('complete',payload)
+                    else: log('complete','not-settled-or-goal-incomplete-suppressed',payload)
                 else: log('complete', 'internal-or-unknown-suppressed', payload)
         except Exception as exc:
             log(kind,type(exc).__name__)

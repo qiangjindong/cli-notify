@@ -12,7 +12,8 @@ from native import install_hooks, uninstall_hooks
 from rpc import Client
 
 class NativeTests(unittest.TestCase):
-    def test_failed_registration_does_not_use_stale_window(self):
+    @patch('bridge.completion_ready', return_value=True)
+    def test_failed_registration_does_not_use_stale_window(self, ready):
         payload={'session_id':'main','turn_id':'turn','cwd':'/tmp/native'}
         with patch('pathlib.Path.read_text',return_value='{"helper":"test-helper"}'),patch.object(sys,'argv',['bridge.py','native-worker','complete',json.dumps(payload)]),patch('bridge.user_thread_name',return_value='原生线程'),patch('bridge.send',return_value=False) as send,patch('bridge.log'),patch.dict(os.environ,{}):
             bridge.main()
@@ -52,7 +53,8 @@ class NativeTests(unittest.TestCase):
             self.assertNotIn('PRIVATE',worker.call_args.args[0][-1])
             self.assertTrue(worker.call_args.kwargs['start_new_session'])
 
-    def test_native_worker_ignores_inherited_window_and_notify(self):
+    @patch('bridge.completion_ready', return_value=True)
+    def test_native_worker_ignores_inherited_window_and_notify(self, ready):
         payload={'session_id':'main','turn_id':'turn','cwd':'/tmp/native'}
         with patch('pathlib.Path.read_text',return_value='{"helper":"test-helper"}'),patch.dict(os.environ,{'CWN_ID':'old-window','CWN_CWD':'/old'}),patch.object(sys,'argv',['bridge.py','native-worker','complete',json.dumps(payload)]),patch('bridge.user_thread_name',return_value='原生线程'),patch('bridge.send') as send:
             bridge.main()

@@ -27,6 +27,75 @@ static class Checks {
             Check(HookBridge.UserThreadName(home, "empty") == "", "empty user thread name");
             Check(HookBridge.UserThreadName(home, "internal") is null && HookBridge.UserThreadName(home, "missing") is null, "internal/unknown suppresses");
             Check(HookBridge.UserThreadName(home, "' OR 1=1 --") is null, "parameterized SQL");
+            var rollout = Path.Combine(home, "rollout.jsonl");
+            using(var db = new SqliteConnection($"Data Source={Path.Combine(home,"state_5.sqlite")};Pooling=False")) {
+                db.Open(); using var cmd = db.CreateCommand();
+                cmd.CommandText = "ALTER TABLE threads ADD COLUMN rollout_path TEXT; UPDATE threads SET rollout_path = $path";
+                cmd.Parameters.AddWithValue("$path", rollout); cmd.ExecuteNonQuery();
+            }
+            string Lifecycle(string kind, string turn = "t") => JsonSerializer.Serialize(new { type = "event_msg", payload = new { type = kind, turn_id = turn } }) + "\n";
+            var done = Lifecycle("task_complete");
+            Check(work.Turn == "t", "worker preserves turn identity");
+            Check(HookBridge.TurnState(home, "user", "t") == CompletionState.Retry, "missing rollout retries");
+            foreach(var (text, expected) in new[] {
+                ("", CompletionState.Retry),
+                (Lifecycle("task_complete", "previous"), CompletionState.Retry),
+                (Lifecycle("task_started"), CompletionState.Retry), (done, CompletionState.Ready),
+                (done + Lifecycle("task_started", "next"), CompletionState.Stop),
+                (Lifecycle("task_started") + Lifecycle("task_started", "next"), CompletionState.Stop),
+                (done + Lifecycle("task_complete", "next"), CompletionState.Stop),
+                (done + Lifecycle("task_started"), CompletionState.Stop),
+                (Lifecycle("turn_aborted"), CompletionState.Stop), (done + "{partial", CompletionState.Retry),
+                (done + Lifecycle("task_started", ""), CompletionState.Retry),
+                (new string('x', 300000) + "\n" + done, CompletionState.Ready)
+            }) {
+                File.WriteAllText(rollout, text);
+                Check(HookBridge.TurnState(home, "user", "t") == expected, "settled lifecycle check");
+            }
+            Check(HookBridge.TurnState(home, "user", "") == CompletionState.Stop, "missing turn suppresses");
+            foreach(var (states, expected) in new[] {
+                (new[] { CompletionState.Ready }, true),
+                (new[] { CompletionState.Retry, CompletionState.Ready }, true),
+                (new[] { CompletionState.Retry, CompletionState.Retry, CompletionState.Ready }, true),
+                (new[] { CompletionState.Stop }, false),
+                (new[] { CompletionState.Retry, CompletionState.Stop }, false),
+                (new[] { CompletionState.Retry, CompletionState.Retry, CompletionState.Retry }, false)
+            }) {
+                int checks = 0, waits = 0;
+                Check(HookBridge.CompletionReady(() => {
+                    Check(waits == checks + 1, "wait before each check");
+                    return states[checks++];
+                }, ms => { Check(ms == 1000, "one second interval"); waits++; }) == expected, "polling result");
+                Check(checks == states.Length && waits == checks, "no extra attempts");
+            }
+            File.Delete(rollout);
+            int recoveryWaits = 0;
+            Check(HookBridge.CompletionReady(() => HookBridge.CheckCompletion(home, "user", "t"), ms => {
+                if(++recoveryWaits == 2) File.WriteAllText(rollout, done);
+            }), "missing file recovers");
+            Check(recoveryWaits == 2, "recovery not delayed to third attempt");
+            Check(HookBridge.GoalState(home, "user") == CompletionState.Ready, "no goals DB preserves completion");
+            var goalsPath = Path.Combine(home, "goals_1.sqlite");
+            Check(!File.Exists(goalsPath), "goal check does not create DB");
+            using(var db = new SqliteConnection($"Data Source={goalsPath};Pooling=False")) {
+                db.Open(); using var cmd = db.CreateCommand();
+                cmd.CommandText = "CREATE TABLE thread_goals (thread_id TEXT PRIMARY KEY, status TEXT);";
+                cmd.ExecuteNonQuery();
+                Check(HookBridge.GoalState(home, "user") == CompletionState.Ready, "no goal preserves completion");
+                foreach(var status in new[] { "active", "paused", "blocked", "usage_limited", "budget_limited", "unknown", "complete" }) {
+                    cmd.CommandText = "INSERT OR REPLACE INTO thread_goals VALUES ('user', $status)";
+                    cmd.Parameters.Clear(); cmd.Parameters.AddWithValue("$status", status); cmd.ExecuteNonQuery();
+                    var expected = status == "complete" ? CompletionState.Ready : CompletionState.Stop;
+                    Check(HookBridge.GoalState(home, "user") == expected, "goal status " + status);
+                    Check(HookBridge.CheckCompletion(home, "user", "t") == expected, "combined goal status " + status);
+                    Check(HookBridge.GoalState(home, "other") == CompletionState.Ready, "goals are scoped to thread");
+                }
+                cmd.CommandText = "DROP TABLE thread_goals"; cmd.ExecuteNonQuery();
+                Check(HookBridge.GoalState(home, "user") == CompletionState.Retry, "unknown schema retries");
+                Check(HookBridge.CheckCompletion(home, "user", "t") == CompletionState.Retry, "goal failure prevents ready");
+                File.WriteAllText(rollout, Lifecycle("turn_aborted"));
+                Check(HookBridge.CheckCompletion(home, "user", "t") == CompletionState.Stop, "abort wins over goal read failure");
+            }
             Check(System.Reflection.CustomAttributeExtensions.GetCustomAttribute<System.Reflection.AssemblyTitleAttribute>(typeof(Program).Assembly)?.Title == "CLI Notify", "shared notification display name");
             var window = new Window(1, 1, 1, "project-folder");
             Check(Program.NotificationTitle(new Event("a", "complete", ThreadName:"补充 PDF 预览并验收"), window) == "补充 PDF 预览并验收", "thread name title");

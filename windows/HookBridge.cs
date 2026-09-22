@@ -5,7 +5,9 @@ using System.Text.Json;
 using Microsoft.Data.Sqlite;
 
 // This record is the entire worker payload. Never forward raw hook input.
-record HookWork(string Session, string Kind, Event Event, string Home);
+record HookWork(string Session, string Kind, Event Event, string Home, string Turn = "");
+
+enum CompletionState { Ready, Stop, Retry }
 
 static class HookBridge {
     internal static string Hash(string value) => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(value)));
@@ -27,7 +29,7 @@ static class HookBridge {
         var key = Hash(JsonSerializer.Serialize(new[] { session, Get("turn_id"), Get("tool_use_id"), Get("tool_call_id"),
             kind is "approval" or "compact" ? Guid.NewGuid().ToString("N") : "" }));
         var cwd = Path.GetFileName(Path.TrimEndingDirectorySeparator(Get("cwd")));
-        return new(session, kind, new Event(Hash(session)[..32], kind, cwd, key), Home);
+        return new(session, kind, new Event(Hash(session)[..32], kind, cwd, key), Home, Get("turn_id"));
     }
 
     internal static void Run() {
@@ -70,6 +72,87 @@ static class HookBridge {
         } catch(Exception ex) { Program.Log("", "hook-origin", ex.GetType().Name); return null; }
     }
 
+    // Stop is a completion candidate, not proof that the goal has finished.
+    internal static CompletionState GoalState(string home, string session) {
+        var path = Path.Combine(home, "goals_1.sqlite");
+        if(!File.Exists(path)) return CompletionState.Ready; // Older Codex versions have no goals DB.
+        try {
+            using var db = new SqliteConnection(new SqliteConnectionStringBuilder {
+                DataSource = path, Mode = SqliteOpenMode.ReadOnly, Pooling = false, DefaultTimeout = 1
+            }.ToString());
+            db.Open();
+            using var query = db.CreateCommand();
+            query.CommandText = "SELECT status FROM thread_goals WHERE thread_id = $id";
+            query.Parameters.AddWithValue("$id", session);
+            var status = query.ExecuteScalar();
+            return status is null || status is string value && value == "complete" ? CompletionState.Ready : CompletionState.Stop;
+        } catch(Exception ex) { Program.Log("", "completion-goal", ex.GetType().Name); return CompletionState.Retry; }
+    }
+
+    internal static CompletionState TurnState(string home, string session, string turn) {
+        if(string.IsNullOrEmpty(turn)) return CompletionState.Stop;
+        try {
+            using var db = new SqliteConnection(new SqliteConnectionStringBuilder {
+                DataSource = Path.Combine(home, "state_5.sqlite"), Mode = SqliteOpenMode.ReadOnly,
+                Pooling = false, DefaultTimeout = 1
+            }.ToString());
+            db.Open();
+            using var query = db.CreateCommand();
+            query.CommandText = "SELECT rollout_path FROM threads WHERE id = $id";
+            query.Parameters.AddWithValue("$id", session);
+            if(query.ExecuteScalar() is not string path) return CompletionState.Retry;
+            using var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            var start = Math.Max(0, file.Length - 262144);
+            file.Seek(start, SeekOrigin.Begin);
+            using var reader = new StreamReader(file, Encoding.UTF8);
+            if(start > 0) reader.ReadLine(); // Discard a possibly partial first record.
+            var state = CompletionState.Retry;
+            bool seenTurn = false;
+            while(reader.ReadLine() is { } line) {
+                using var doc = JsonDocument.Parse(line);
+                var root = doc.RootElement;
+                if(!root.TryGetProperty("type", out var type) || type.GetString() != "event_msg") continue;
+                var payload = root.GetProperty("payload");
+                if(!payload.TryGetProperty("type", out var eventType)) continue;
+                var name = eventType.GetString();
+                if(name is not ("task_started" or "task_complete" or "turn_aborted")) continue;
+                if(!payload.TryGetProperty("turn_id", out var id) || id.ValueKind != JsonValueKind.String || string.IsNullOrEmpty(id.GetString())) {
+                    state = CompletionState.Retry;
+                    continue;
+                }
+                if(id.GetString() != turn) {
+                    if(seenTurn) return CompletionState.Stop;
+                    continue; // An older turn alone cannot prove continuation.
+                }
+                seenTurn = true;
+                if(name == "turn_aborted" || (name == "task_started" && state == CompletionState.Ready))
+                    return CompletionState.Stop;
+                state = name == "task_complete" ? CompletionState.Ready : CompletionState.Retry;
+            }
+            return state;
+        } catch(Exception ex) { Program.Log("", "completion-settled", ex.GetType().Name); return CompletionState.Retry; }
+    }
+
+    internal static CompletionState CheckCompletion(string home, string session, string turn) {
+        var goal = GoalState(home, session);
+        if(goal == CompletionState.Stop) return CompletionState.Stop;
+        var state = TurnState(home, session, turn);
+        if(state == CompletionState.Stop) return CompletionState.Stop;
+        return goal == CompletionState.Ready && state == CompletionState.Ready ? CompletionState.Ready : CompletionState.Retry;
+    }
+
+    internal static bool CompletionReady(Func<CompletionState> check, Action<int>? sleep = null) {
+        sleep ??= Thread.Sleep;
+        // Three attempts, not consecutive successes. I/O adds to the wait time.
+        for(int attempt = 0; attempt < 3; attempt++) {
+            sleep(1000);
+            var state = check();
+            if(state == CompletionState.Ready) return true;
+            if(state == CompletionState.Stop) return false;
+        }
+        return false;
+    }
+
     internal static void Dispatch() {
         Console.InputEncoding = new UTF8Encoding(false);
         var work = JsonSerializer.Deserialize<HookWork>(Console.In.ReadToEnd())!;
@@ -79,6 +162,12 @@ static class HookBridge {
                 Program.Log(work.Event.Id, work.Kind, "internal-or-unknown-suppressed"); return;
             }
             work = work with { Event = work.Event with { ThreadName = threadName } };
+        }
+        if(work.Kind == "complete") {
+            // Wait only in the detached worker, never in the hook itself.
+            if(!CompletionReady(() => CheckCompletion(work.Home, work.Session, work.Turn))) {
+                Program.Log(work.Event.Id, work.Kind, "not-settled-or-goal-incomplete-suppressed"); return;
+            }
         }
         // Re-register every event; failed capture/registration must never use stale state.
         Program.Send(work.Event with { Kind = "register" });

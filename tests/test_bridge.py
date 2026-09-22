@@ -103,7 +103,8 @@ class BridgeTests(unittest.TestCase):
         with patch.dict(os.environ,{'CWN_ORIGINAL_NOTIFY':json.dumps(['original','--arg'])}),patch.object(sys,'argv',['bridge.py','complete',raw]),patch('bridge.send'),patch('bridge.subprocess.Popen') as popen:
             bridge.main();self.assertEqual(popen.call_args.args[0],['original','--arg',raw])
 
-    def test_internal_completion_before_user_completion(self):
+    @patch('bridge.completion_ready', return_value=True)
+    def test_internal_completion_before_user_completion(self, ready):
         with tempfile.TemporaryDirectory() as temp:
             with closing(sqlite3.connect(str(Path(temp)/'state_5.sqlite'))) as db, db:
                 db.execute('CREATE TABLE threads (id TEXT, source TEXT, thread_source TEXT, name TEXT)')
