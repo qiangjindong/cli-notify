@@ -13,6 +13,10 @@ Codex 已完成
 
 ## 安装
 
+Windows Codex、Windows Pi 和 WSL 共用 `%LOCALAPPDATA%\CliNotify\app` 执行端。安装器会核对执行端源码、依赖声明、图标及已安装文件的 SHA-256；一致时只注册客户端、配置对应 hooks，不构建、不停止服务、不覆盖文件，也无需 .NET SDK。源码或图标变化、文件缺失/损坏时仍走原有更新流程。
+
+兼容记录保存在 `%LOCALAPPDATA%\CliNotify\helper-install.json`，Windows 与 WSL 互通。旧安装没有记录，首次仍需更新一次（更新时请暂时停用通知客户端）；之后相同内容的安装可直接复用。此检查采用保守的内容一致性判断，不推断不同版本之间的协议兼容性。
+
 ### Windows 原生 Codex（验证性实现）
 
 需要 Windows 原生 Codex、Windows Terminal 和 Windows .NET 9 SDK，不需要 Python。在 PowerShell 中进入项目目录运行：

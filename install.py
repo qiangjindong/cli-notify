@@ -23,6 +23,8 @@ def check_requirements():
         raise InstallError('请在 WSL Ubuntu 终端中运行 ./install.sh。')
     if not Path(PS).is_file() or not shutil.which('wslpath'):
         raise InstallError('WSL 的 Windows 互操作不可用，请先在 WSL 中确认 powershell.exe 可以运行。')
+
+def check_sdk():
     dotnet = Path('/mnt/c/Program Files/dotnet/dotnet.exe')
     if not dotnet.is_file():
         raise InstallError('Windows 中未找到 .NET 9 SDK。请安装后重新运行 ./install.sh。')
@@ -56,31 +58,12 @@ def main():
     dest=Path(subprocess.check_output(['wslpath','-u',local],text=True).strip())/'CliNotify'
     from clients import installation_lock
     with installation_lock(dest):
-        build=dest/'build'
-        build.mkdir(parents=True,exist_ok=True)
-        for source in (ROOT/'windows').glob('*.cs'): shutil.copy2(source,build/source.name)
-        shutil.copy2(ROOT/'windows/CliNotify.csproj',build/'CliNotify.csproj')
-        project=subprocess.check_output(['wslpath','-w',str(build/'CliNotify.csproj')],text=True).strip()
-        output=subprocess.check_output(['wslpath','-w',str(dest/'app')],text=True).strip()
-        app_icon=build/'app.ico'
-        publish=['/mnt/c/Program Files/dotnet/dotnet.exe','publish',project,'-c','Release','-r','win-x64','--self-contained','false','-o',output]
-        if icon is None:
-            app_icon.unlink(missing_ok=True)
+        from helper_install import compatible_helper, record_helper
+        if compatible_helper(dest, ROOT, icon):
+            print('[3/4] 已有兼容的通知程序，跳过构建和更新…')
         else:
-            icon_input=subprocess.check_output(['wslpath','-w',str(icon)],text=True).strip()
-            icon_output=subprocess.check_output(['wslpath','-w',str(app_icon)],text=True).strip()
-            icon_script=subprocess.check_output(['wslpath','-w',str(ROOT/'windows/make-icon.ps1')],text=True).strip()
-            subprocess.run([PS,'-NoProfile','-ExecutionPolicy','Bypass','-File',icon_script,icon_input,icon_output],check=True)
-            publish.append(f'-p:ApplicationIcon={icon_output}')
-        helper_path=dest/'app/CliNotify.exe'
-        if helper_path.exists():
-            from clients import stop_helper
-            stop_helper(helper_path)
-        print('[3/4] 构建并安装通知程序（首次运行可能需要几分钟）…')
-        subprocess.run(publish,check=True)
-        for old_icon in dest.glob('notification-icon-*.png'):
-            old_icon.unlink()
-        (dest/'notification-icon.png').unlink(missing_ok=True)
+            build_helper(dest, icon)
+            record_helper(dest, ROOT, icon)
         helper=str(dest/'app/CliNotify.exe')
         wtlinux=subprocess.check_output(['wslpath','-u',wt],text=True).strip()
         print('[4/4] 配置 Codex 提醒…')
@@ -92,6 +75,36 @@ def main():
     link=Path.home()/'.local/bin/codex-window'
     if link.is_symlink() and link.resolve()==ROOT/'codex-window': link.unlink()
     print('\n安装完成。请关闭当前 Codex，再重新运行 codex。')
+
+def build_helper(dest, icon):
+    check_sdk()
+    # Invalidate the receipt before any update, including failed publishes.
+    (dest/'helper-install.json').unlink(missing_ok=True)
+    build=dest/'build'
+    build.mkdir(parents=True,exist_ok=True)
+    for source in (ROOT/'windows').glob('*.cs'): shutil.copy2(source,build/source.name)
+    shutil.copy2(ROOT/'windows/CliNotify.csproj',build/'CliNotify.csproj')
+    project=subprocess.check_output(['wslpath','-w',str(build/'CliNotify.csproj')],text=True).strip()
+    output=subprocess.check_output(['wslpath','-w',str(dest/'app')],text=True).strip()
+    app_icon=build/'app.ico'
+    publish=['/mnt/c/Program Files/dotnet/dotnet.exe','publish',project,'-c','Release','-r','win-x64','--self-contained','false','-o',output]
+    if icon is None:
+        app_icon.unlink(missing_ok=True)
+    else:
+        icon_input=subprocess.check_output(['wslpath','-w',str(icon)],text=True).strip()
+        icon_output=subprocess.check_output(['wslpath','-w',str(app_icon)],text=True).strip()
+        icon_script=subprocess.check_output(['wslpath','-w',str(ROOT/'windows/make-icon.ps1')],text=True).strip()
+        subprocess.run([PS,'-NoProfile','-ExecutionPolicy','Bypass','-File',icon_script,icon_input,icon_output],check=True)
+        publish.append(f'-p:ApplicationIcon={icon_output}')
+    helper_path=dest/'app/CliNotify.exe'
+    if helper_path.exists():
+        from clients import stop_helper
+        stop_helper(helper_path)
+    print('[3/4] 构建并安装通知程序（首次运行可能需要几分钟）…')
+    subprocess.run(publish,check=True)
+    for old_icon in dest.glob('notification-icon-*.png'):
+        old_icon.unlink()
+    (dest/'notification-icon.png').unlink(missing_ok=True)
 
 if __name__=='__main__':
     try:

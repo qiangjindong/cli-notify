@@ -10,7 +10,6 @@ if (-not $PiOnly) {
     Get-Command codex.exe -ErrorAction Stop | Out-Null
 }
 Get-Command wt.exe -ErrorAction Stop | Out-Null
-if (-not ((& dotnet --list-sdks) -match '^9\.')) { throw 'Windows .NET 9 SDK is required.' }
 $settingsPath = Join-Path $PSScriptRoot 'cli-notify.json'
 $settings = Get-Content -Raw -LiteralPath $settingsPath | ConvertFrom-Json
 $notificationProperty = $settings.PSObject.Properties['notification']
@@ -35,25 +34,34 @@ try {
         $previous = Get-Content -Raw -LiteralPath $manifest | ConvertFrom-Json
         if ($previous.home -ne $CodexHome) { throw 'Uninstall the existing Windows client before changing CODEX_HOME.' }
     }
-    $stage = Join-Path $root 'build-windows'
-    $iconBuild = Join-Path $root 'build-windows-icon'
-    $generatedIcon = Join-Path $iconBuild 'app.ico'
-    $publishArgs = @('publish', "$PSScriptRoot\windows\CliNotify.csproj", '-c', 'Release', '-r', 'win-x64', '--self-contained', 'false', '-o', $stage, '--nologo')
-    if ($null -eq $icon) { Remove-Item -LiteralPath $generatedIcon -Force -ErrorAction SilentlyContinue }
-    else {
-        & "$PSScriptRoot\windows\make-icon.ps1" -InputPng $icon -OutputIco $generatedIcon
-        $publishArgs += "-p:ApplicationIcon=$generatedIcon"
-    }
-    & dotnet @publishArgs
-    if ($LASTEXITCODE -ne 0) { throw 'Publish failed; configuration was not changed.' }
-    if (-not $PiOnly) { Invoke-Helper (Join-Path $stage 'CliNotify.exe') @('--configure', 'check', $CodexHome) }
     $app = Join-Path $root 'app'
     $helper = Join-Path $app 'CliNotify.exe'
-    Stop-InstalledHelper $helper
-    New-Item -ItemType Directory -Force -Path $app, $clients | Out-Null
-    Copy-Item -Path "$stage\*" -Destination $app -Recurse -Force
-    Get-ChildItem -LiteralPath $root -Filter 'notification-icon-*.png' | Remove-Item -Force
-    Remove-Item -LiteralPath (Join-Path $root 'notification-icon.png') -Force -ErrorAction SilentlyContinue
+    if (Test-CompatibleHelper $root $PSScriptRoot $icon) {
+        Write-Host 'Compatible notification helper already installed; skipping build and update.'
+        if (-not $PiOnly) { Invoke-Helper $helper @('--configure', 'check', $CodexHome) }
+    } else {
+        if (-not ((& dotnet --list-sdks) -match '^9\.')) { throw 'Windows .NET 9 SDK is required.' }
+        Remove-Item -LiteralPath (Join-Path $root 'helper-install.json') -Force -ErrorAction SilentlyContinue
+        $stage = Join-Path $root 'build-windows'
+        $iconBuild = Join-Path $root 'build-windows-icon'
+        $generatedIcon = Join-Path $iconBuild 'app.ico'
+        $publishArgs = @('publish', "$PSScriptRoot\windows\CliNotify.csproj", '-c', 'Release', '-r', 'win-x64', '--self-contained', 'false', '-o', $stage, '--nologo')
+        if ($null -eq $icon) { Remove-Item -LiteralPath $generatedIcon -Force -ErrorAction SilentlyContinue }
+        else {
+            & "$PSScriptRoot\windows\make-icon.ps1" -InputPng $icon -OutputIco $generatedIcon
+            $publishArgs += "-p:ApplicationIcon=$generatedIcon"
+        }
+        & dotnet @publishArgs
+        if ($LASTEXITCODE -ne 0) { throw 'Publish failed; configuration was not changed.' }
+        if (-not $PiOnly) { Invoke-Helper (Join-Path $stage 'CliNotify.exe') @('--configure', 'check', $CodexHome) }
+        Stop-InstalledHelper $helper
+        New-Item -ItemType Directory -Force -Path $app, $clients | Out-Null
+        Copy-Item -Path "$stage\*" -Destination $app -Recurse -Force
+        Get-ChildItem -LiteralPath $root -Filter 'notification-icon-*.png' | Remove-Item -Force
+        Remove-Item -LiteralPath (Join-Path $root 'notification-icon.png') -Force -ErrorAction SilentlyContinue
+        Write-HelperReceipt $root $PSScriptRoot $icon
+    }
+    New-Item -ItemType Directory -Force -Path $clients | Out-Null
     # Keep a lease even if configuring fails, so another client cannot remove
     # files needed for a repair/retry of this installation.
     if ($PiOnly) {
