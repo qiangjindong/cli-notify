@@ -1,7 +1,7 @@
 # Remove the extension with `pi remove <package path>` and restart Pi first.
 $ErrorActionPreference = 'Stop'
 . "$PSScriptRoot\windows\installation.ps1"
-$root = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'CodexWinNotify'
+$root = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'CliNotify'
 $lock = Enter-InstallLock $root
 try {
     $manifest = Join-Path $root 'clients\pi-windows.json'
@@ -12,7 +12,7 @@ try {
         Write-Host 'Pi lease removed. Shared helper retained for Codex/WSL clients.'
         return
     }
-    $helper = Join-Path $root 'app\CodexWinNotify.exe'
+    $helper = Join-Path $root 'app\CliNotify.exe'
     Stop-InstalledHelper $helper
     Invoke-Helper $helper @('--uninstall')
     Remove-InstallData $root

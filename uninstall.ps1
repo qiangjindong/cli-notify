@@ -2,14 +2,14 @@ param([string]$CodexHome = $(if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Joi
 $ErrorActionPreference = 'Stop'
 . "$PSScriptRoot\windows\installation.ps1"
 $CodexHome = [IO.Path]::GetFullPath($CodexHome)
-$root = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'CodexWinNotify'
+$root = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'CliNotify'
 $lock = Enter-InstallLock $root
 try {
     $manifest = Join-Path $root 'clients\windows.json'
     if (-not (Test-Path -LiteralPath $manifest)) { Write-Host 'No Windows client installed.'; return }
     $client = Get-Content -Raw -LiteralPath $manifest | ConvertFrom-Json
     if ($client.home -ne $CodexHome) { throw 'CODEX_HOME does not match the installed Windows client.' }
-    $helper = Join-Path $root 'app\CodexWinNotify.exe'
+    $helper = Join-Path $root 'app\CliNotify.exe'
     Invoke-Helper $helper @('--configure', 'uninstall', $CodexHome)
     Remove-Item -LiteralPath $manifest
     if (Get-ChildItem -LiteralPath (Join-Path $root 'clients') -Filter '*.json') {

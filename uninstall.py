@@ -13,7 +13,7 @@ def main():
         raise RuntimeError('CODEX_HOME does not match the installed WSL client')
     helper=Path(install['helper'])
     dest=Path(install['root'])
-    if dest.name!='CodexWinNotify' or helper.parent.parent!=dest: raise RuntimeError('Unexpected installation path')
+    if dest.name!='CliNotify' or helper.parent.parent!=dest: raise RuntimeError('Unexpected installation path')
     from clients import installation_lock, release
     with installation_lock(dest):
         uninstall_hooks()
@@ -29,7 +29,7 @@ def main():
             shutil.rmtree(dest/'build')
     link=Path.home()/'.local/bin/codex-window'
     if link.is_symlink() and link.resolve()==ROOT/'codex-window': link.unlink()
-    state=Path(__import__('os').environ.get('XDG_STATE_HOME',str(Path.home()/'.local/state')))/'codex-win-notify'
+    state=Path(__import__('os').environ.get('XDG_STATE_HOME',str(Path.home()/'.local/state')))/'cli-notify'
     if state.exists(): shutil.rmtree(state)
     (ROOT/'installation.json').unlink()
     print('已卸载。Codex 原有配置及项目源码保留。')

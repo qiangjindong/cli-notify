@@ -5,8 +5,12 @@ using Tomlyn;
 using Tomlyn.Model;
 
 static class HookConfig {
-    const string Begin = "# BEGIN codex-win-notify-windows";
-    const string End = "# END codex-win-notify-windows";
+    const string Begin = "# BEGIN cli-notify-windows";
+    const string End = "# END cli-notify-windows";
+    // Markers written by the pre-rename codex-win-notify release. Recognized so
+    // an upgrade replaces the old block in place instead of stacking a second one.
+    const string LegacyBegin = "# BEGIN codex-win-notify-windows";
+    const string LegacyEnd = "# END codex-win-notify-windows";
     static readonly JsonSerializerOptions Json = new() { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
     static string Quote(string s) => JsonSerializer.Serialize(s, Json);
     static readonly (string Event, string Name, string? Matcher)[] Events = [
@@ -16,25 +20,30 @@ static class HookConfig {
         ("PostCompact", "post_compact", "^(manual|auto)$"), ("Stop", "stop", null)
     ];
 
-    internal static string Remove(string text) {
+    static string Cut(string text, string begin, string end) {
         // Match complete marker lines only, retaining all bytes outside our block.
-        var start = text.IndexOf(Begin, StringComparison.Ordinal);
+        var start = text.IndexOf(begin, StringComparison.Ordinal);
         if(start < 0) {
-            if(text.Contains(End)) throw new InvalidDataException("Orphan configuration marker");
+            if(text.Contains(end, StringComparison.Ordinal)) throw new InvalidDataException("Orphan configuration marker");
             return text;
         }
-        var end = text.IndexOf(End, start, StringComparison.Ordinal);
-        if(end < 0 || (start > 0 && text[start-1] != '\n') || text.IndexOf(Begin, start+Begin.Length, StringComparison.Ordinal) >= 0)
+        var stop = text.IndexOf(end, start, StringComparison.Ordinal);
+        if(stop < 0 || (start > 0 && text[start-1] != '\n') || text.IndexOf(begin, start+begin.Length, StringComparison.Ordinal) >= 0)
             throw new InvalidDataException("Incomplete or duplicated configuration block");
-        var tail = end + End.Length;
+        var tail = stop + end.Length;
         if(tail < text.Length && text[tail] == '\r') tail++;
         if(tail < text.Length && text[tail] == '\n') tail++;
         return text[..start] + text[tail..];
     }
 
+    internal static string Remove(string text) => Cut(Cut(text, LegacyBegin, LegacyEnd), Begin, End);
+
     internal static string Install(string old, string configPath, string executable) {
         var basis = Remove(old);
-        if(basis.Contains("# BEGIN codex-win-notify\n") || basis.Contains("# BEGIN codex-win-notify\r\n"))
+        // The legacy WSL marker must keep blocking too: it is still what a
+        // not-yet-upgraded WSL install owns in its own CODEX_HOME.
+        if(basis.Contains("# BEGIN cli-notify\n") || basis.Contains("# BEGIN cli-notify\r\n")
+            || basis.Contains("# BEGIN codex-win-notify\n") || basis.Contains("# BEGIN codex-win-notify\r\n"))
             throw new InvalidDataException("WSL and Windows must use separate CODEX_HOME directories");
         var model = Toml.ToModel(basis);
         var hooks = model.TryGetValue("hooks", out var h) ? (TomlTable)h : new TomlTable();
@@ -86,14 +95,14 @@ static class HookConfig {
         var path = Path.Combine(Path.GetFullPath(home), "config.toml");
         var old = File.Exists(path) ? File.ReadAllText(path) : "";
         var result = action switch {
-            "install" => Install(old, path, Path.Combine(AppContext.BaseDirectory, "CodexWinNotify.exe")),
-            "check" => Install(old, path, Path.Combine(AppContext.BaseDirectory, "CodexWinNotify.exe")),
+            "install" => Install(old, path, Path.Combine(AppContext.BaseDirectory, "CliNotify.exe")),
+            "check" => Install(old, path, Path.Combine(AppContext.BaseDirectory, "CliNotify.exe")),
             "uninstall" => Remove(old), _ => throw new ArgumentException("action")
         };
         if(action == "check" || result == old) return;
         Toml.ToModel(result);
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        var backup = Path.Combine(home, "codex-win-notify.windows.config.backup");
+        var backup = Path.Combine(home, "cli-notify.windows.config.backup");
         if(File.Exists(path) && !File.Exists(backup)) File.Copy(path, backup);
         var temp = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
         try { File.WriteAllText(temp, result, new UTF8Encoding(false)); File.Move(temp, path, true); }

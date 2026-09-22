@@ -41,7 +41,7 @@ with Client() as c:
             completed=message['params']['turn'].get('status')=='completed';break
     assert asked and completed, 'request_user_input or continuation did not complete'
     time.sleep(1)
-    logfile=Path.home()/'.local/state/codex-win-notify/bridge.log'
+    logfile=Path.home()/'.local/state/cli-notify/bridge.log'
     events=[json.loads(line) for line in logfile.read_text().splitlines() if ident in line]
     assert any(e['kind']=='question' and e['result']=='sent' for e in events),events
     assert any(e['kind']=='complete' and e['result']=='sent' for e in events),events

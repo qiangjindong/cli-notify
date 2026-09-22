@@ -8,8 +8,8 @@ using Microsoft.Toolkit.Uwp.Notifications;
 record Event(string Id, string Kind, string Cwd = "", string Key = "", string ThreadName = "", long Hwnd = 0, int Pid = 0, long Started = 0, string Client = "Codex");
 record Window(long Hwnd, int Pid, long Started, string Cwd);
 static class Program {
-    static readonly string Root = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "CodexWinNotify");
-    static readonly string Pipe = "CodexWinNotify-" + Environment.UserName;
+    static readonly string Root = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "CliNotify");
+    static readonly string Pipe = "CliNotify-" + Environment.UserName;
     static readonly object Gate = new();
     static readonly Dictionary<string, Window> Windows = new();
     static readonly HashSet<string> Seen = new();

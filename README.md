@@ -1,6 +1,6 @@
-# Codex Windows 通知
+# CLI Notify
 
-Codex 在后台完成任务、等待你回答或等待审批时，向 Windows 发送通知。点击通知即可回到原来的终端窗口。
+Codex / Pi 在后台完成任务、等待你回答或等待审批时，向 Windows 发送通知。点击通知即可回到原来的终端窗口。
 
 通知第一行显示 Codex 线程名称，第二行显示状态，例如：
 
@@ -58,7 +58,7 @@ pi install .
 
 ## 通知图标
 
-默认使用 `assets/codex-win-notify.png`。如需替换，编辑仓库根目录的 `codex-win-notify.json`：
+默认使用 `assets/cli-notify.png`。如需替换，编辑仓库根目录的 `cli-notify.json`：
 
 ```json
 {
@@ -89,6 +89,16 @@ WSL：
 测试通知会在当前终端位于前台时照常显示。点击通知应返回当前 Windows Terminal，用于验证通知发送和窗口关联；该命令不消耗 Codex 模型额度。
 
 如果安装失败，安装器会说明缺少什么。最常见的问题是 Windows 没有安装 [.NET 9 SDK](https://dotnet.microsoft.com/download/dotnet/9.0)。
+
+## 从 codex-win-notify 升级
+
+本仓库由 `codex-win-notify` 重命名而来；旧仓库保留作为归档，不再更新。程序名、配置文件名、安装路径和配置标记均已改为 `CliNotify` / `cli-notify`。
+
+- **配置块会原地替换**：安装器识别旧版写入的 `codex-win-notify-windows`（WSL 侧为 `codex-win-notify`）标记块，先移除再写入新块，不会叠加两份 hooks。直接运行 `.\install.ps1` 或 `./install.sh` 即可。
+- **旧安装目录不会自动清理**：`%LOCALAPPDATA%\CodexWinNotify` 会保留。确认其中不再有 WSL client（`clients\wsl-*.json`）后可以删除；若仍有旧版 WSL 安装，请先在 WSL 中运行旧版 `./uninstall.sh`。
+- **旧 Toast 应用身份会残留**：通知身份按 exe 路径注册，旧条目会留在「设置 → 系统 → 通知」列表里。需要彻底清除时，先运行旧版 `uninstall.ps1`（或 `./uninstall.sh`）再安装新版。
+- 旧助手进程 `CodexWinNotify.exe` 可能仍在后台驻留，但不再接收新事件；可手动结束，或由旧版卸载脚本清理。
+- 不要再用旧源码目录重新安装，否则会把共享助手降级回旧版；升级后请只使用本仓库的安装器。
 
 ## 卸载
 

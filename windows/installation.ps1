@@ -10,14 +10,14 @@ function Invoke-Helper([string]$Executable, [string[]]$Arguments) {
         '"' + [regex]::Replace($value, '(\\+)$', '$1$1') + '"'
     }) -join ' '
     $process = Start-Process -FilePath $Executable -ArgumentList $quoted -WindowStyle Hidden -Wait -PassThru
-    if ($process.ExitCode -ne 0) { throw "Helper failed ($($process.ExitCode)); see $env:LOCALAPPDATA\CodexWinNotify\helper.log" }
+    if ($process.ExitCode -ne 0) { throw "Helper failed ($($process.ExitCode)); see $env:LOCALAPPDATA\CliNotify\helper.log" }
 }
 function Stop-InstalledHelper([string]$Helper) {
-    Get-Process CodexWinNotify -ErrorAction SilentlyContinue |
+    Get-Process CliNotify -ErrorAction SilentlyContinue |
         Where-Object { $_.Path -eq $Helper } | Stop-Process -Force
 }
 function Remove-InstallData([string]$Root) {
-    $expected = [IO.Path]::GetFullPath((Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'CodexWinNotify'))
+    $expected = [IO.Path]::GetFullPath((Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'CliNotify'))
     if ([IO.Path]::GetFullPath($Root) -ne $expected) { throw 'Unexpected installation directory.' }
     # Keep the open lock file in place until the caller releases its handle.
     Get-ChildItem -LiteralPath $Root -Force | Where-Object { $_.Name -ne 'install.lock' } | ForEach-Object {

@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parent
 
 def log(kind, result, payload=None):
     try:
-        path = Path(os.environ.get('XDG_STATE_HOME', str(Path.home()/'.local/state'))) / 'codex-win-notify'
+        path = Path(os.environ.get('XDG_STATE_HOME', str(Path.home()/'.local/state'))) / 'cli-notify'
         path.mkdir(parents=True, exist_ok=True)
         row = {'id':os.environ.get('CWN_ID',''), 'kind':kind, 'result':result}
         payload=payload or {}

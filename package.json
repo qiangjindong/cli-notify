@@ -1,8 +1,8 @@
 {
-  "name": "pi-codex-win-notify",
+  "name": "pi-cli-notify",
   "version": "0.1.0",
   "private": true,
-  "description": "Pi notifications using the CodexWinNotify Windows Terminal window bridge",
+  "description": "Pi notifications using the CliNotify Windows Terminal window bridge",
   "type": "module",
   "keywords": ["pi-package"],
   "pi": { "extensions": ["./pi/cli-notify.js"] },

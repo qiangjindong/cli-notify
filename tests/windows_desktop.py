@@ -18,7 +18,7 @@ import tomllib
 import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
-STATE = Path(os.environ['LOCALAPPDATA'])/'CodexWinNotify'
+STATE = Path(os.environ['LOCALAPPDATA'])/'CliNotify'
 USER32 = ctypes.windll.user32
 USER32.GetForegroundWindow.restype = ctypes.c_void_p
 USER32.ShowWindowAsync.argtypes = [ctypes.c_void_p, ctypes.c_int]
@@ -60,7 +60,7 @@ def worker(folder):
         raise
 
 def main():
-    helper = Path(sys.argv[sys.argv.index('--helper')+1]) if '--helper' in sys.argv else STATE/'app/CodexWinNotify.exe'
+    helper = Path(sys.argv[sys.argv.index('--helper')+1]) if '--helper' in sys.argv else STATE/'app/CliNotify.exe'
     helper = helper.resolve()
     previous = USER32.GetForegroundWindow()
     ids = []; folders = []

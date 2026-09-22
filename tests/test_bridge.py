@@ -154,7 +154,7 @@ class BridgeTests(unittest.TestCase):
     def test_log_records_identity_without_conversation(self):
         with tempfile.TemporaryDirectory() as temp,patch.dict(os.environ,{'XDG_STATE_HOME':temp}):
             bridge.log('complete','internal-or-unknown-suppressed',{'thread-id':'thread','turn-id':'turn','thread_name':'PRIVATE THREAD NAME','last-assistant-message':'PRIVATE'})
-            text=(Path(temp)/'codex-win-notify/bridge.log').read_text()
+            text=(Path(temp)/'cli-notify/bridge.log').read_text()
             self.assertNotIn('PRIVATE',text)
             self.assertEqual(json.loads(text)['thread-id'],'thread')
     def test_cli_hooks_preserved(self):

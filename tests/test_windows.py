@@ -24,7 +24,7 @@ class WindowsTests(unittest.TestCase):
             root = Path(folder)
             app = root/'app'
             shutil.copytree(BUILD, app)
-            exe = app/'CodexWinNotify.exe'
+            exe = app/'CliNotify.exe'
             home = root/'home'; home.mkdir()
             config = home/'config.toml'
             old = '# keep\nnotify=["original"]\n[[hooks.Stop]]\n[[hooks.Stop.hooks]]\ntype="command"\ncommand="echo original"\n'
@@ -56,16 +56,16 @@ class WindowsTests(unittest.TestCase):
 
     def test_bad_hook_fails_open(self):
         for payload in ('not-json', '{}', '{"hook_event_name":"Stop","session_id":"s"}'):
-            result = subprocess.run([BUILD/'CodexWinNotify.exe', '--hook'], input=payload,
+            result = subprocess.run([BUILD/'CliNotify.exe', '--hook'], input=payload,
                 capture_output=True, text=True, timeout=5)
             self.assertEqual(result.returncode, 0)
             self.assertNotIn('Exception', result.stderr)
 
 class ClientTests(unittest.TestCase):
     def test_stop_missing_helper_is_not_a_failed_pipeline(self):
-        with patch('clients.subprocess.check_output', return_value='C:\\app\\CodexWinNotify.exe\n'), \
+        with patch('clients.subprocess.check_output', return_value='C:\\app\\CliNotify.exe\n'), \
              patch('clients.subprocess.run') as run:
-            stop_helper(Path('/mnt/c/app/CodexWinNotify.exe'))
+            stop_helper(Path('/mnt/c/app/CliNotify.exe'))
         command = run.call_args.args[0]
         self.assertIn('$process = Get-Process', command[-1])
         self.assertIn('$process | Where-Object', command[-1])

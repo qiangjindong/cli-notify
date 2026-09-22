@@ -12,7 +12,7 @@ class NotificationCommandTests(unittest.TestCase):
              patch.object(test_notification, 'ROOT', Path(folder)), \
              patch('test_notification.subprocess.run') as run, \
              patch('builtins.print'):
-            helper = Path(folder)/'app/CodexWinNotify.exe'
+            helper = Path(folder)/'app/CliNotify.exe'
             helper.parent.mkdir()
             helper.touch()
             (Path(folder)/'installation.json').write_text(json.dumps({'helper':str(helper)}))

@@ -54,7 +54,7 @@ def original_notify(cwd,args):
             if isinstance(value,dict) and isinstance(left.get(key),dict): merge(left[key],value)
             else: left[key]=value
     merge(base,selected)
-    with tempfile.TemporaryDirectory(prefix='codex-win-notify-config-') as temporary:
+    with tempfile.TemporaryDirectory(prefix='cli-notify-config-') as temporary:
         config=Path(temporary)/'config.toml'
         config.write_text('\n'.join(json.dumps(k)+'='+toml_value(v) for k,v in base.items()))
         config.chmod(0o600)

@@ -11,12 +11,12 @@ if (-not $PiOnly) {
 }
 Get-Command wt.exe -ErrorAction Stop | Out-Null
 if (-not ((& dotnet --list-sdks) -match '^9\.')) { throw 'Windows .NET 9 SDK is required.' }
-$settingsPath = Join-Path $PSScriptRoot 'codex-win-notify.json'
+$settingsPath = Join-Path $PSScriptRoot 'cli-notify.json'
 $settings = Get-Content -Raw -LiteralPath $settingsPath | ConvertFrom-Json
 $notificationProperty = $settings.PSObject.Properties['notification']
 if ($null -eq $notificationProperty -or $null -eq $settings.notification -or
     $null -eq $settings.notification.PSObject.Properties['icon']) {
-    throw 'codex-win-notify.json must contain notification.icon.'
+    throw 'cli-notify.json must contain notification.icon.'
 }
 $icon = $settings.notification.icon
 if ($null -ne $icon) {
@@ -26,7 +26,7 @@ if ($null -ne $icon) {
     if ([IO.Path]::GetExtension($icon) -ine '.png') { throw 'notification.icon currently supports PNG files only.' }
     if (-not (Test-Path -LiteralPath $icon -PathType Leaf)) { throw "Notification icon not found: $icon" }
 }
-$root = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'CodexWinNotify'
+$root = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'CliNotify'
 $lock = Enter-InstallLock $root
 try {
     $clients = Join-Path $root 'clients'
@@ -38,7 +38,7 @@ try {
     $stage = Join-Path $root 'build-windows'
     $iconBuild = Join-Path $root 'build-windows-icon'
     $generatedIcon = Join-Path $iconBuild 'app.ico'
-    $publishArgs = @('publish', "$PSScriptRoot\windows\CodexWinNotify.csproj", '-c', 'Release', '-r', 'win-x64', '--self-contained', 'false', '-o', $stage, '--nologo')
+    $publishArgs = @('publish', "$PSScriptRoot\windows\CliNotify.csproj", '-c', 'Release', '-r', 'win-x64', '--self-contained', 'false', '-o', $stage, '--nologo')
     if ($null -eq $icon) { Remove-Item -LiteralPath $generatedIcon -Force -ErrorAction SilentlyContinue }
     else {
         & "$PSScriptRoot\windows\make-icon.ps1" -InputPng $icon -OutputIco $generatedIcon
@@ -46,9 +46,9 @@ try {
     }
     & dotnet @publishArgs
     if ($LASTEXITCODE -ne 0) { throw 'Publish failed; configuration was not changed.' }
-    if (-not $PiOnly) { Invoke-Helper (Join-Path $stage 'CodexWinNotify.exe') @('--configure', 'check', $CodexHome) }
+    if (-not $PiOnly) { Invoke-Helper (Join-Path $stage 'CliNotify.exe') @('--configure', 'check', $CodexHome) }
     $app = Join-Path $root 'app'
-    $helper = Join-Path $app 'CodexWinNotify.exe'
+    $helper = Join-Path $app 'CliNotify.exe'
     Stop-InstalledHelper $helper
     New-Item -ItemType Directory -Force -Path $app, $clients | Out-Null
     Copy-Item -Path "$stage\*" -Destination $app -Recurse -Force

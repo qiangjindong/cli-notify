@@ -18,13 +18,13 @@
 pi install .
 ```
 
-第一步构建/更新 `%LOCALAPPDATA%\CodexWinNotify\app\CodexWinNotify.exe`，登记 `clients\pi-windows.json`。第二步将本仓库作为本地 package 加入 Pi。重启 Pi，或执行 `/reload`。
+第一步构建/更新 `%LOCALAPPDATA%\CliNotify\app\CliNotify.exe`，登记 `clients\pi-windows.json`。第二步将本仓库作为本地 package 加入 Pi。重启 Pi，或执行 `/reload`。
 
 即便之前安装了 Codex 通知，也需要运行第一步以更新助手的 `--pi-send` 接口。它会停止旧助手，更新共享文件；下次通知自动启动助手，不停止 Codex/Pi 本身。
 
 本地 package 不复制源码，请保留仓库。以后更新代码后重新运行 `install-pi.ps1` 并在 Pi `/reload`。仍使用共享助手的 Codex 应同步使用本仓库新版安装器，避免旧源码重装降级助手。
 
-助手、Toast 应用身份和图标与 Codex 共用，系统通知标题栏统一显示 `CLI Notify`；正文状态及测试消息使用 Pi / Codex 前缀区分来源，会话名为空时回退为目录名。程序文件名和安装路径仍保留 `CodexWinNotify` 以兼容已有配置。更新后须重新运行 `install-pi.ps1`，由新助手刷新通知显示名；旧通知可能仍显示旧名称。
+助手、Toast 应用身份和图标与 Codex 共用，系统通知标题栏统一显示 `CLI Notify`；正文状态及测试消息使用 Pi / Codex 前缀区分来源，会话名为空时回退为目录名。更新后须重新运行 `install-pi.ps1`，由新助手刷新通知显示名；旧通知可能仍显示旧名称。
 
 ## 行为
 
@@ -69,7 +69,7 @@ $env:PYTHONUTF8 = '1'
 python -m unittest discover -s tests -p 'test_*.py' -v
 ```
 
-发送失败时先更新助手，再查看 `%LOCALAPPDATA%\CodexWinNotify\helper.log`。若系统屏蔽通知或开启勿扰，助手发送成功也不代表横幅一定显示。
+发送失败时先更新助手，再查看 `%LOCALAPPDATA%\CliNotify\helper.log`。若系统屏蔽通知或开启勿扰，助手发送成功也不代表横幅一定显示。
 
 ## 卸载
 

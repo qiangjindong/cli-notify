@@ -53,14 +53,14 @@ def main():
         wt=query('(Get-Command wt.exe -ErrorAction Stop).Source')
     except subprocess.CalledProcessError as exc:
         raise InstallError('Windows 中未找到 Windows Terminal，请安装后重新运行 ./install.sh。') from exc
-    dest=Path(subprocess.check_output(['wslpath','-u',local],text=True).strip())/'CodexWinNotify'
+    dest=Path(subprocess.check_output(['wslpath','-u',local],text=True).strip())/'CliNotify'
     from clients import installation_lock
     with installation_lock(dest):
         build=dest/'build'
         build.mkdir(parents=True,exist_ok=True)
         for source in (ROOT/'windows').glob('*.cs'): shutil.copy2(source,build/source.name)
-        shutil.copy2(ROOT/'windows/CodexWinNotify.csproj',build/'CodexWinNotify.csproj')
-        project=subprocess.check_output(['wslpath','-w',str(build/'CodexWinNotify.csproj')],text=True).strip()
+        shutil.copy2(ROOT/'windows/CliNotify.csproj',build/'CliNotify.csproj')
+        project=subprocess.check_output(['wslpath','-w',str(build/'CliNotify.csproj')],text=True).strip()
         output=subprocess.check_output(['wslpath','-w',str(dest/'app')],text=True).strip()
         app_icon=build/'app.ico'
         publish=['/mnt/c/Program Files/dotnet/dotnet.exe','publish',project,'-c','Release','-r','win-x64','--self-contained','false','-o',output]
@@ -72,7 +72,7 @@ def main():
             icon_script=subprocess.check_output(['wslpath','-w',str(ROOT/'windows/make-icon.ps1')],text=True).strip()
             subprocess.run([PS,'-NoProfile','-ExecutionPolicy','Bypass','-File',icon_script,icon_input,icon_output],check=True)
             publish.append(f'-p:ApplicationIcon={icon_output}')
-        helper_path=dest/'app/CodexWinNotify.exe'
+        helper_path=dest/'app/CliNotify.exe'
         if helper_path.exists():
             from clients import stop_helper
             stop_helper(helper_path)
@@ -81,7 +81,7 @@ def main():
         for old_icon in dest.glob('notification-icon-*.png'):
             old_icon.unlink()
         (dest/'notification-icon.png').unlink(missing_ok=True)
-        helper=str(dest/'app/CodexWinNotify.exe')
+        helper=str(dest/'app/CliNotify.exe')
         wtlinux=subprocess.check_output(['wslpath','-u',wt],text=True).strip()
         print('[4/4] 配置 Codex 提醒…')
         from native import install_hooks, config_path

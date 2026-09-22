@@ -45,6 +45,23 @@ class NativeTests(unittest.TestCase):
                 self.assertTrue(any(h.get('command')=='/bin/true' and h['trustStatus']=='untrusted' for h in entry['hooks']))
             uninstall_hooks();self.assertEqual(path.read_text(),old)
 
+    def test_legacy_marker_upgrade_and_windows_conflict(self):
+        from native import install_hooks, remove_block
+        legacy = '# BEGIN codex-win-notify\n# END codex-win-notify\n'
+        self.assertEqual(remove_block('keep=true\n'+legacy), 'keep=true\n')
+        self.assertEqual(remove_block(legacy+'# BEGIN cli-notify\n# END cli-notify\n'), '')
+        with tempfile.TemporaryDirectory() as temp,patch.dict(os.environ,{'CODEX_HOME':temp}):
+            path=Path(temp)/'config.toml'
+            # A not-yet-upgraded Windows install in the same CODEX_HOME still conflicts.
+            path.write_text('# BEGIN codex-win-notify-windows\n# END codex-win-notify-windows\n')
+            with self.assertRaises(ValueError): install_hooks()
+            # Upgrading over our own legacy block replaces it in place.
+            path.write_text(legacy)
+            install_hooks()
+            text=path.read_text()
+            self.assertNotIn('codex-win-notify',text)
+            self.assertIn('# BEGIN cli-notify\n',text)
+
     def test_native_detaches_private_payload_and_stop_returns_json(self):
         payload={'hook_event_name':'Stop','session_id':'main','turn_id':'turn','cwd':'/tmp/test','last_assistant_message':'PRIVATE'}
         with patch('bridge.json.load',return_value=payload),patch.object(sys,'argv',['bridge.py','native']),patch('bridge.subprocess.Popen') as worker,patch('builtins.print') as output:

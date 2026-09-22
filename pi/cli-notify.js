@@ -15,7 +15,7 @@ export function installExtension(pi, {
   uuid = () => randomUUID().replaceAll("-", ""),
 } = {}) {
   const helper = env.LOCALAPPDATA
-    ? win32.join(env.LOCALAPPDATA, "CodexWinNotify", "app", "CodexWinNotify.exe")
+    ? win32.join(env.LOCALAPPDATA, "CliNotify", "app", "CliNotify.exe")
     : undefined;
   const supported = platform === "win32" && !!env.WT_SESSION && !!helper;
   const ids = new Map();
@@ -59,7 +59,7 @@ export function installExtension(pi, {
         await send(helper, event, controller.signal);
         return true;
       } catch {
-        warn(ctx, "Pi Windows 通知发送失败。请运行 install-pi.ps1 更新助手，并检查 %LOCALAPPDATA%\\CodexWinNotify\\helper.log。");
+        warn(ctx, "Pi Windows 通知发送失败。请运行 install-pi.ps1 更新助手，并检查 %LOCALAPPDATA%\\CliNotify\\helper.log。");
         return false;
       }
     }).finally(() => { pending--; });

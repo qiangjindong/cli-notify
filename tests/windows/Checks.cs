@@ -133,13 +133,17 @@ static class Checks {
             }
             var old = "# existing\nnotify=['keep']\n[[hooks.Stop]]\n[[hooks.Stop.hooks]]\ntype='command'\ncommand='keep'\n";
             var config = Path.Combine(home, "config.toml");
-            var first = HookConfig.Install(old, config, @"C:\中文 空格 & test\CodexWinNotify.exe");
-            Check(HookConfig.Install(first, config, @"C:\中文 空格 & test\CodexWinNotify.exe") == first, "idempotent");
+            var first = HookConfig.Install(old, config, @"C:\中文 空格 & test\CliNotify.exe");
+            Check(HookConfig.Install(first, config, @"C:\中文 空格 & test\CliNotify.exe") == first, "idempotent");
             Check(HookConfig.Remove(first) == old, "preserve config");
-            foreach(var invalid in new[] {"# BEGIN codex-win-notify-windows\n", "# END codex-win-notify-windows\n", "invalid = [", "# BEGIN codex-win-notify\n"}) {
+            foreach(var invalid in new[] { "# BEGIN cli-notify-windows\n", "# END cli-notify-windows\n", "invalid = [", "# BEGIN cli-notify\n", "# BEGIN codex-win-notify\n" }) {
                 bool failed = false; try { HookConfig.Install(invalid, config, @"C:\test.exe"); } catch { failed = true; }
                 Check(failed, "reject invalid/shared configuration");
             }
+            // Upgrading over a pre-rename install must replace the old block, not stack a second one.
+            var legacyFirst = HookConfig.Install("# BEGIN codex-win-notify-windows\n[[hooks.Stop]]\n# END codex-win-notify-windows\n", config, @"C:\test.exe");
+            Check(!legacyFirst.Contains("codex-win-notify") && legacyFirst.Contains("# BEGIN cli-notify-windows"), "replace legacy block in place");
+            Check(HookConfig.Remove(legacyFirst) == "", "remove upgraded block");
             Console.WriteLine($"Passed {count} Windows bridge/config checks.");
         } finally { Directory.Delete(home, true); }
     }

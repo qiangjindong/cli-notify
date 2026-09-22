@@ -15,7 +15,7 @@ class Client:
                 except ValueError: pass
             self.messages.put(None)
         threading.Thread(target=read,daemon=True).start()
-        try: self.call('initialize',{'clientInfo':{'name':'codex_win_notify','version':'1.0'},'capabilities':{'experimentalApi':True}})
+        try: self.call('initialize',{'clientInfo':{'name':'cli_notify','version':'1.0'},'capabilities':{'experimentalApi':True}})
         except Exception:
             self.close(); raise
         self.write({'method':'initialized'})

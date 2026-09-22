@@ -74,7 +74,7 @@ try:
     # Restart the helper, then exercise the exact persisted activation path.
     helperwin=subprocess.check_output(['wslpath','-w',helper],text=True).strip()
     literal="'"+helperwin.replace("'","''")+"'"
-    subprocess.run([ps,'-NoProfile','-Command',f'Get-Process CodexWinNotify -ErrorAction SilentlyContinue | Where-Object {{ $_.Path -eq {literal} }} | Stop-Process -Force'],check=True)
+    subprocess.run([ps,'-NoProfile','-Command',f'Get-Process CliNotify -ErrorAction SilentlyContinue | Where-Object {{ $_.Path -eq {literal} }} | Stop-Process -Force'],check=True)
     send(ids[1],'focus');assert logs(ids[1],'click')[-1] in ('focused','foreground-denied-flashed')
     report.append('persisted window identity survives helper restart')
     for folder in folders: (folder/'stop').touch()

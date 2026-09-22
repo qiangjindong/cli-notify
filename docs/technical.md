@@ -12,7 +12,7 @@
 
 Windows hook 配置使用官方支持的 `command_windows`，POSIX fallback 为 `:`。实测 `cmd /C` 引号边界会破坏带空格的 exe 命令，因此使用系统 Windows PowerShell 的 `-EncodedCommand` 做纯 stdin/stdout 转接，hook 业务仍在 C# 中。编码命令不含用户问答，路径按 PowerShell 字符串转义；无需 8.3 短路径。系统目录本身包含空白或 shell 扩展字符时拒绝安装。此方案增加一次 PowerShell 启动开销；不是 `codex` 的 PATH shim。
 
-`Tomlyn` 校验配置，但不重写已有文本，只追加/移除 `codex-win-notify-windows` 标记块。首次备份为 `codex-win-notify.windows.config.backup`。Codex 0.155.1 的信任摘要按平台解析后的命令计算，已通过真实 `hooks/list` 验证五项均 trusted；已有 notify、hook、信任配置保留。参考：[官方 hooks 文档](https://developers.openai.com/zh-Hans/docs/hooks)。
+`Tomlyn` 校验配置，但不重写已有文本，只追加/移除 `cli-notify-windows` 标记块。标记识别兼容旧版 `codex-win-notify-windows` 名称，因此从 `codex-win-notify` 升级时原地替换旧块，不会留下两份 hooks。首次备份为 `cli-notify.windows.config.backup`。Codex 0.155.1 的信任摘要按平台解析后的命令计算，已通过真实 `hooks/list` 验证五项均 trusted；已有 notify、hook、信任配置保留。参考：[官方 hooks 文档](https://developers.openai.com/zh-Hans/docs/hooks)。
 
 Windows 五类 hook 的超时上限为 10 秒。原先的 2 秒可能被 PowerShell 与 .NET 启动开销耗尽，出现通知已发送但 CLI 仍显示 `hook timed out after 2s` 的情况。10 秒是执行上限，不是固定等待；通知仍由分离的 worker 发送。修改后运行 `install.ps1` 更新配置及对应信任摘要，再退出并重启 Codex；不要只手改 `timeout`，否则信任摘要会失效。
 
@@ -67,9 +67,9 @@ python3 install.py
 python3 uninstall.py
 ```
 
-安装需要 WSL Python 3.11+、Windows .NET 9 SDK、Windows Terminal、WSL Windows 互操作和 NuGet 网络连接。安装至 `%LOCALAPPDATA%\CodexWinNotify`，用户配置自动加载提醒 hooks。助手按需启动，无管理员权限要求，无开机启动。
+安装需要 WSL Python 3.11+、Windows .NET 9 SDK、Windows Terminal、WSL Windows 互操作和 NuGet 网络连接。安装至 `%LOCALAPPDATA%\CliNotify`，用户配置自动加载提醒 hooks。助手按需启动，无管理员权限要求，无开机启动。
 
-通知图标由源码根目录的 `codex-win-notify.json` 中 `notification.icon` 配置。安装器校验 PNG 路径，以 Windows `System.Drawing` 将其转换为包含 16–256px 九档 PNG 图像的 ICO，再通过 MSBuild `ApplicationIcon` 嵌入助手 EXE；因此图标位于通知标题栏的应用身份位置，而不是 Toast 正文的 `appLogoOverride` 图片位。相对路径以源码根目录为基准，`null` 表示不嵌入自定义应用图标。配置只在安装时读取，修改后需要重新安装。
+通知图标由源码根目录的 `cli-notify.json` 中 `notification.icon` 配置。安装器校验 PNG 路径，以 Windows `System.Drawing` 将其转换为包含 16–256px 九档 PNG 图像的 ICO，再通过 MSBuild `ApplicationIcon` 嵌入助手 EXE；因此图标位于通知标题栏的应用身份位置，而不是 Toast 正文的 `appLogoOverride` 图片位。相对路径以源码根目录为基准，`null` 表示不嵌入自定义应用图标。配置只在安装时读取，修改后需要重新安装。
 
 重新安装会停止本工具的助手并更新文件；下一次事件会重新启动助手。卸载停止助手，调用通知组件的 `Uninstall()` 清理通知与注册，再删除 Windows 安装文件、本工具配置块和 WSL 状态目录。保留此源码目录便于审查；保留原有 Codex 配置。
 
@@ -77,7 +77,7 @@ python3 uninstall.py
 
 安装器在 `${CODEX_HOME:-~/.codex}/config.toml` 追加带标记的配置块，配置 `SessionStart`、`PreToolUse`、`PermissionRequest`、`PostCompact` 和 `Stop`。原始 `codex` 自动加载这些 hooks，无需 alias、PATH 包装或修改 Codex 可执行文件。`SessionStart` 登记会话对应窗口；每次提醒也先登记当前窗口，避免依赖启动 hook 的触发时机，然后按会话标识发送提醒，完成提醒使用 `Stop`。原有 `notify` 不修改，继续由 Codex 调用。已有 hooks 和信任状态保留，只信任本工具五个确切 hook。
 
-重装替换本工具配置块；卸载只移除该块。首次修改已有配置时保存 `codex-win-notify.config.backup`，不会用备份覆盖后续用户修改。hooks 在新进程启动时加载，安装后须退出并重新运行 `codex`。显式关闭 hooks 会关闭全部四类提醒。
+重装替换本工具配置块；卸载只移除该块。标记识别同时兼容旧版 `codex-win-notify` 名称，升级不需要先手动卸载。首次修改已有配置时保存 `cli-notify.config.backup`，不会用备份覆盖后续用户修改。hooks 在新进程启动时加载，安装后须退出并重新运行 `codex`。显式关闭 hooks 会关闭全部四类提醒。
 
 hook 立即分离通知工作进程，不等待点击、回答或审批；`Stop` 仅输出空 JSON，其余无输出。事件不携带命令、提问、回答或完成文本。登记或桥接失败记录日志后继续 Codex。
 
@@ -93,15 +93,15 @@ rollout 读取仅用于生命周期判定，不转发或记录正文；日志只
 
 日志：
 
-- Windows：`%LOCALAPPDATA%\CodexWinNotify\helper.log`
-- WSL：`${XDG_STATE_HOME:-~/.local/state}/codex-win-notify/bridge.log`
+- Windows：`%LOCALAPPDATA%\CliNotify\helper.log`
+- WSL：`${XDG_STATE_HOME:-~/.local/state}/cli-notify/bridge.log`
 
 日志不记录线程名称、完整提问、回答、命令或 Codex 完成文本。
 
 ## 验证
 
 ```sh
-cd $HOME/codex-win-notify
+cd $HOME/cli-notify
 python3 -m unittest discover -s tests -p 'test_*.py' -v
 python3 tests/desktop.py --native
 python3 tests/real_hook.py
@@ -124,8 +124,8 @@ python3 tests/real_hook.py
 助手进程可用以下 Windows PowerShell 命令停止以测试重新激活：
 
 ```powershell
-Get-Process CodexWinNotify -ErrorAction SilentlyContinue |
-  Where-Object { $_.Path -eq "$env:LOCALAPPDATA\CodexWinNotify\app\CodexWinNotify.exe" } |
+Get-Process CliNotify -ErrorAction SilentlyContinue |
+  Where-Object { $_.Path -eq "$env:LOCALAPPDATA\CliNotify\app\CliNotify.exe" } |
   Stop-Process -Force
 ```
 

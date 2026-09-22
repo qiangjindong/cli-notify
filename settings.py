@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 
 
-CONFIG_NAME = 'codex-win-notify.json'
+CONFIG_NAME = 'cli-notify.json'
 
 
 def notification_icon(root: Path) -> Path | None:

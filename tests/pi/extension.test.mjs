@@ -42,7 +42,7 @@ test("factory is inert; start registers metadata; test is model-free", async () 
   assert.equal(h.sent[0].Cwd, "项目");
   assert.equal(h.sent[0].ThreadName, "中文会话");
   assert.equal(h.sent[0].Client, "Pi");
-  assert.equal(h.sent[0].helper, "C:\\用户 空格\\CodexWinNotify\\app\\CodexWinNotify.exe");
+  assert.equal(h.sent[0].helper, "C:\\用户 空格\\CliNotify\\app\\CliNotify.exe");
 });
 
 test("session start registers silently for every reason", async () => {
