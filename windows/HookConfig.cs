@@ -56,7 +56,9 @@ static class HookConfig {
         foreach(var (ev, name, matcher) in Events) {
             // Sorted dictionaries reproduce Codex's canonical JSON trust hash.
             var handler = new SortedDictionary<string, object>(StringComparer.Ordinal) {
-                ["async"] = false, ["command"] = ":", ["command_windows"] = command, ["timeout"] = 2, ["type"] = "command"
+                // PowerShell + .NET startup alone can approach two seconds on Windows.
+                // This is a ceiling, not a delay; notification delivery stays detached.
+                ["async"] = false, ["command"] = ":", ["command_windows"] = command, ["timeout"] = 10, ["type"] = "command"
             };
             // Codex hashes the platform-resolved command, not command_windows.
             var effective = new SortedDictionary<string, object>(handler, StringComparer.Ordinal);

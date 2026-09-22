@@ -14,6 +14,8 @@ Windows hook 配置使用官方支持的 `command_windows`，POSIX fallback 为 
 
 `Tomlyn` 校验配置，但不重写已有文本，只追加/移除 `codex-win-notify-windows` 标记块。首次备份为 `codex-win-notify.windows.config.backup`。Codex 0.155.1 的信任摘要按平台解析后的命令计算，已通过真实 `hooks/list` 验证五项均 trusted；已有 notify、hook、信任配置保留。参考：[官方 hooks 文档](https://developers.openai.com/zh-Hans/docs/hooks)。
 
+Windows 五类 hook 的超时上限为 10 秒。原先的 2 秒可能被 PowerShell 与 .NET 启动开销耗尽，出现通知已发送但 CLI 仍显示 `hook timed out after 2s` 的情况。10 秒是执行上限，不是固定等待；通知仍由分离的 worker 发送。修改后运行 `install.ps1` 更新配置及对应信任摘要，再退出并重启 Codex；不要只手改 `timeout`，否则信任摘要会失效。
+
 两侧使用同一个 Windows `install.lock` 文件共享模式锁串行安装卸载。`clients/windows.json` 记录 Windows Home；`clients/wsl-<摘要>.json` 按发行版和 WSL 配置路径区分。还有其他 client 时保留助手，最后一个 client 才卸载 Toast 并清除数据，保留空锁文件。遇到旧版 WSL `build` 目录且没有 client 清单时，Windows 卸载保守保留助手。旧版 WSL 卸载器不认识清单，必须更新后重装再用于共存卸载。共享同一个 Codex Home 会改变 hook 索引和信任键，首版明确拒绝；应使用两个独立 Home。
 
 Windows 验证命令（测试使用 Python，产品安装/运行不需要）：

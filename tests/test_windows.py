@@ -41,7 +41,10 @@ class WindowsTests(unittest.TestCase):
                 self.assertTrue(all(h['trustStatus'] == 'trusted' for h in hooks), hooks)
                 original = next(h for h in entry['hooks'] if h.get('command') == 'echo original')
                 self.assertEqual(original['trustStatus'], 'untrusted')
-            command = tomllib.loads(first.decode())['hooks']['Stop'][-1]['hooks'][0]['command_windows']
+            installed = tomllib.loads(first.decode())['hooks']
+            for event in ('SessionStart', 'PreToolUse', 'PermissionRequest', 'PostCompact', 'Stop'):
+                self.assertEqual(installed[event][-1]['hooks'][0]['timeout'], 10)
+            command = installed['Stop'][-1]['hooks'][0]['command_windows']
             # Empty session avoids window capture and dispatch; Stop must still reply.
             result = subprocess.run([os.environ['COMSPEC'], '/d', '/s', '/c', command],
                 input=json.dumps({'hook_event_name':'Stop','last_assistant_message':'PRIVATE'}),
